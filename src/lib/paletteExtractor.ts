@@ -2,12 +2,7 @@
 // Uses ColorThief to extract dominant colors from an uploaded image
 import type { LogoPalette } from '../types/editor';
 
-// ColorThief doesn't have a proper ESM default export; use window-based access
-// We load it via a lightweight inline implementation to avoid require()
-type ColorThiefInstance = {
-  getColor: (img: HTMLImageElement) => number[];
-  getPalette: (img: HTMLImageElement, count: number) => number[][];
-};
+// No external dependencies needed.
 
 // Inline ColorThief-compatible implementation using canvas
 // Extract colors by quantizing RGB space to find the most frequent distinct colors
