@@ -432,10 +432,26 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
       : [{ offset: 0, color: cfg.color }, { offset: 1, color: cfg.color }];
     const cs: (string | number)[] = [];
     stops.forEach((s) => cs.push(s.offset, hexToRgba(s.color, cfg.alpha)));
-    const isH = cfg.type === 'horizontal' || dir === 'h';
+
+    let start = { x: 0, y: h / 2 };
+    let end = { x: w, y: h / 2 };
+    
+    if (cfg.type === 'linear' && typeof cfg.angle === 'number') {
+      const rad = (cfg.angle * Math.PI) / 180;
+      const cx = w / 2;
+      const cy = h / 2;
+      const halfLen = Math.abs((w / 2) * Math.cos(rad)) + Math.abs((h / 2) * Math.sin(rad));
+      start = { x: cx - Math.cos(rad) * halfLen, y: cy - Math.sin(rad) * halfLen };
+      end = { x: cx + Math.cos(rad) * halfLen, y: cy + Math.sin(rad) * halfLen };
+    } else {
+      const isH = cfg.type === 'horizontal' || dir === 'h';
+      start = isH ? { x: 0, y: h / 2 } : { x: w / 2, y: 0 };
+      end = isH ? { x: w, y: h / 2 } : { x: w / 2, y: h };
+    }
+
     return {
-      fillLinearGradientStartPoint: isH ? { x: 0, y: h / 2 } : { x: w / 2, y: 0 },
-      fillLinearGradientEndPoint:   isH ? { x: w, y: h / 2 } : { x: w / 2, y: h },
+      fillLinearGradientStartPoint: start,
+      fillLinearGradientEndPoint: end,
       fillLinearGradientColorStops: cs,
     };
   }

@@ -47,6 +47,7 @@ export interface ColorConfig {
   color: string;       // primary hex
   alpha: number;       // 0–1
   stops?: ColorStop[]; // for gradients
+  angle?: number;      // 0-360 degrees for linear gradients
 }
 
 export interface ModuleState {

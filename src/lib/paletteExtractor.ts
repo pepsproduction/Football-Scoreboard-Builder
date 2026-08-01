@@ -4,78 +4,109 @@ import type { LogoPalette } from '../types/editor';
 
 // No external dependencies needed.
 
-// Inline ColorThief-compatible implementation using canvas
-// Extract colors by quantizing RGB space to find the most frequent distinct colors
-function getQuantizedColors(img: HTMLImageElement, maxColors: number): number[][] {
+// Extract colors smartly using a fast K-means clustering on non-transparent pixels
+function getSmartColors(img: HTMLImageElement, maxColors: number): number[][] {
   const canvas = document.createElement('canvas');
-  const size = 150;
+  const size = 100;
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
   
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, size, size);
   ctx.drawImage(img, 0, 0, size, size);
-  
   const data = ctx.getImageData(0, 0, size, size).data;
-  const colorMap = new Map<number, { count: number; rawCount: number; r: number; g: number; b: number }>();
+  
+  const pixels: number[][] = [];
   
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 128) continue; 
+    if (data[i + 3] < 20) continue; // Ignore highly transparent pixels
     
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
     
-    // Down-weight pure white/black slightly
-    const isBoring = (r > 240 && g > 240 && b > 240) || (r < 25 && g < 25 && b < 25);
-    const weight = isBoring ? 0.1 : 1;
-
-    // Quantize to 4-bits per channel
-    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    // Ignore near white, near black, or grays to focus on vibrant colors, unless they're the only colors
+    const isBoring = 
+      (r > 240 && g > 240 && b > 240) || 
+      (r < 25 && g < 25 && b < 25) ||
+      (Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && Math.abs(r - b) < 15);
     
-    const existing = colorMap.get(key);
-    if (existing) {
-      existing.count += weight;
-      existing.rawCount++;
-      existing.r += r;
-      existing.g += g;
-      existing.b += b;
-    } else {
-      colorMap.set(key, { count: weight, rawCount: 1, r, g, b });
+    if (!isBoring || Math.random() < 0.05) { // Down-sample boring colors heavily to prioritize vibrant ones
+      pixels.push([r, g, b]);
     }
   }
 
-  const sortedBuckets = Array.from(colorMap.values()).sort((a, b) => b.count - a.count);
-  const result: number[][] = [];
+  // If we rejected too many (e.g., pure black/white logo), fall back to all non-transparent pixels
+  if (pixels.length < 50) {
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] > 50) {
+        pixels.push([data[i], data[i+1], data[i+2]]);
+      }
+    }
+  }
   
-  for (const bucket of sortedBuckets) {
-    if (result.length >= maxColors * 2) break;
-    
-    const avg = [
-      Math.round(bucket.r / bucket.rawCount),
-      Math.round(bucket.g / bucket.rawCount),
-      Math.round(bucket.b / bucket.rawCount)
-    ];
+  if (pixels.length === 0) return [[30, 50, 100]];
 
-    // Ensure distinct colors (Euclidean distance threshold)
-    const isDistinct = result.every(res => {
-      const dr = res[0] - avg[0];
-      const dg = res[1] - avg[1];
-      const db = res[2] - avg[2];
-      return (dr*dr + dg*dg + db*db) > 2500; // threshold
-    });
-    
-    if (isDistinct || result.length === 0) {
-      result.push(avg);
+  // K-means++ initialization
+  let centroids: number[][] = [];
+  centroids.push([...pixels[Math.floor(Math.random() * pixels.length)]]);
+  
+  for (let i = 1; i < maxColors; i++) {
+    let maxDist = -1;
+    let nextCenter = pixels[0];
+    for (const p of pixels) {
+      let minDist = Infinity;
+      for (const c of centroids) {
+        const dist = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
+        if (dist < minDist) minDist = dist;
+      }
+      if (minDist > maxDist) {
+        maxDist = minDist;
+        nextCenter = p;
+      }
     }
+    centroids.push([...nextCenter]);
   }
 
-  while (result.length < maxColors) {
-    result.push([30, 50, 100]); // fallback
+  // K-means iteration
+  let clusters: number[][][] = [];
+  for (let iter = 0; iter < 10; iter++) {
+    clusters = Array.from({ length: maxColors }, () => []);
+    for (const p of pixels) {
+      let minDist = Infinity;
+      let closest = 0;
+      for (let i = 0; i < maxColors; i++) {
+        const c = centroids[i];
+        const dist = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
+        if (dist < minDist) { minDist = dist; closest = i; }
+      }
+      clusters[closest].push(p);
+    }
+    
+    let moved = false;
+    for (let i = 0; i < maxColors; i++) {
+      if (clusters[i].length === 0) continue;
+      let sumR = 0, sumG = 0, sumB = 0;
+      for (const p of clusters[i]) {
+        sumR += p[0]; sumG += p[1]; sumB += p[2];
+      }
+      const newR = sumR / clusters[i].length;
+      const newG = sumG / clusters[i].length;
+      const newB = sumB / clusters[i].length;
+      if (Math.abs(centroids[i][0] - newR) > 1 || Math.abs(centroids[i][1] - newG) > 1 || Math.abs(centroids[i][2] - newB) > 1) moved = true;
+      centroids[i] = [newR, newG, newB];
+    }
+    if (!moved) break;
   }
+  
+  // Sort clusters by size
+  const sortedClusters = clusters.filter(c => c.length > 0).sort((a, b) => b.length - a.length);
+  const result = sortedClusters.map(c => {
+    let r=0,g=0,b=0;
+    for(const p of c) { r+=p[0]; g+=p[1]; b+=p[2]; }
+    return [Math.round(r/c.length), Math.round(g/c.length), Math.round(b/c.length)];
+  });
 
-  return result.slice(0, maxColors);
+  return result.length > 0 ? result : [[30, 50, 100]];
 }
 
 
@@ -116,19 +147,13 @@ function isGoldish(rgb: number[]): boolean {
  * The image must already be loaded (naturalWidth > 0).
  */
 export async function extractPalette(imgEl: HTMLImageElement): Promise<LogoPalette> {
-  // ColorThief requires a fully loaded image on a same-origin canvas
-  // We draw the image to an offscreen canvas to handle cross-origin issues
   const canvas = document.createElement('canvas');
   canvas.width = imgEl.naturalWidth || imgEl.width;
   canvas.height = imgEl.naturalHeight || imgEl.height;
   const ctx = canvas.getContext('2d')!;
 
-  // Fill white background to handle transparent PNGs (ColorThief can't read alpha)
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(imgEl, 0, 0);
 
-  // Create a temporary image from the canvas to pass to ColorThief
   const tempImg = new Image();
   await new Promise<void>((resolve) => {
     tempImg.onload = () => resolve();
@@ -139,9 +164,15 @@ export async function extractPalette(imgEl: HTMLImageElement): Promise<LogoPalet
   let palette: number[][];
 
   try {
-    const extractedColors = getQuantizedColors(tempImg, 8);
-    // The most frequent distinct color is dominant
-    dominant = extractedColors[0];
+    const extractedColors = getSmartColors(tempImg, 6);
+    // Find the most frequent color that isn't too desaturated/extreme
+    const vibrant = extractedColors.filter(c => {
+      const sat = getSaturation(c);
+      const bright = getBrightness(c);
+      return sat > 0.15 && bright > 25 && bright < 235;
+    });
+    
+    dominant = vibrant.length > 0 ? vibrant[0] : extractedColors[0];
     palette = extractedColors;
   } catch {
     // Fallback if extraction fails

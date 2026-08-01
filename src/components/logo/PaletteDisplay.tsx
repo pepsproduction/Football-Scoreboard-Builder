@@ -1,4 +1,4 @@
-﻿// src/components/logo/PaletteDisplay.tsx
+// src/components/logo/PaletteDisplay.tsx
 import React, { useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
@@ -66,24 +66,43 @@ const PaletteDisplay: React.FC = () => {
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          className="btn btn-secondary"
-          onClick={handleReapplyTheme}
-          style={{ fontSize: 11, flex: 1 }}
-          id="btn-reapply-theme"
-        >
-          <RotateCcw size={11} /> ใช้สีจาก Logo
-        </button>
+      {/* Theme Variants */}
+      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 500 }}>
+          สีที่วิเคราะห์จาก LOGO
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {[
+            { label: 'Premium Dark', desc: 'สุขุม พรีเมียม' },
+            { label: 'Vibrant Neon', desc: 'สีสด เด่นชัด' },
+            { label: 'Deep Mono', desc: 'เข้ม มินิมอล' },
+            { label: 'Alternative', desc: 'เน้นสีรอง' }
+          ].map((v, i) => (
+            <button
+              key={i}
+              className="btn btn-secondary"
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 4px', height: 'auto', gap: 2 }}
+              onClick={() => {
+                if (!palette) return;
+                applyPaletteTheme(palette, i);
+                const theme = buildThemeFromPalette(palette, i);
+                setTemplate(theme.suggestedTemplate);
+              }}
+              id={`btn-apply-theme-${i}`}
+            >
+              <span style={{ fontSize: 10, fontWeight: 600 }}>{v.label}</span>
+              <span style={{ fontSize: 9, color: 'var(--color-text-muted)', fontWeight: 400 }}>{v.desc}</span>
+            </button>
+          ))}
+        </div>
         <button
           className="btn btn-ghost"
           onClick={resetColors}
-          style={{ fontSize: 11 }}
+          style={{ fontSize: 11, width: '100%', marginTop: 8 }}
           id="btn-reset-colors-palette"
           title="รีเซ็ตสีทั้งหมด"
         >
-          Default
+          รีเซ็ตกลับเป็นสีเริ่มต้น
         </button>
       </div>
     </div>

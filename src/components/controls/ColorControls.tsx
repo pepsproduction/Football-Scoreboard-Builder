@@ -13,8 +13,8 @@ const COLOR_SECTIONS: {
   labelTH: string;
   teamBKey?: keyof EditorColors;
 }[] = [
-  { key: 'teamABg', labelTH: 'พื้นหลังชื่อทีม A', teamBKey: 'teamBBg' },
-  { key: 'scoreABg', labelTH: 'พื้นหลังคะแนน A', teamBKey: 'scoreBBg' },
+  { key: 'teamABg', labelTH: 'พื้นหลังชื่อทีม', teamBKey: 'teamBBg' },
+  { key: 'scoreABg', labelTH: 'พื้นหลังคะแนน', teamBKey: 'scoreBBg' },
   { key: 'framePrimary', labelTH: 'กรอบหลัก' },
   { key: 'frameInner', labelTH: 'กรอบชั้นใน' },
   { key: 'highlight', labelTH: 'Highlight' },
@@ -36,22 +36,47 @@ export const ColorSwatchPicker: React.FC<ColorSwatchPickerProps> = ({ colorKey, 
   const colorsLinked = useEditorStore((s) => s.colorsLinked);
   const setColor = useEditorStore((s) => s.setColor);
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'A' | 'B'>('A');
 
+  const [activeStopIndex, setActiveStopIndex] = useState<number>(0);
+
+  const currentTab = colorsLinked ? 'A' : activeTab;
+  const currentKey = (currentTab === 'B' && teamBKey) ? teamBKey : colorKey;
+  
   const cfg = colors[colorKey];
   const linkedCfg = teamBKey ? colors[teamBKey] : null;
+  const currentCfg = colors[currentKey];
   const showLinkedLabel = teamBKey !== undefined;
 
+  const isGradient = currentCfg.type !== 'solid';
+  const hasStops = currentCfg.stops && currentCfg.stops.length >= 2;
+  const stops = hasStops ? currentCfg.stops! : [
+    { offset: 0, color: currentCfg.color },
+    { offset: 1, color: currentCfg.color }
+  ];
+  const activeColor = isGradient ? stops[activeStopIndex].color : currentCfg.color;
+
   const handleColorChange = (hex: string) => {
-    setColor(colorKey, { color: hex });
-    if (teamBKey && colorsLinked) {
-      setColor(teamBKey, { color: hex });
+    if (isGradient) {
+      const newStops = [...stops];
+      newStops[activeStopIndex] = { ...newStops[activeStopIndex], color: hex };
+      const extra = activeStopIndex === 0 ? { color: hex } : {};
+      setColor(currentKey, { stops: newStops, ...extra });
+      if (currentKey === colorKey && teamBKey && colorsLinked) {
+        setColor(teamBKey, { stops: newStops, ...extra });
+      }
+    } else {
+      setColor(currentKey, { color: hex });
+      if (currentKey === colorKey && teamBKey && colorsLinked) {
+        setColor(teamBKey, { color: hex });
+      }
     }
   };
 
   const handleAlphaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const alpha = parseFloat(e.target.value);
-    setColor(colorKey, { alpha });
-    if (teamBKey && colorsLinked) {
+    setColor(currentKey, { alpha });
+    if (currentKey === colorKey && teamBKey && colorsLinked) {
       setColor(teamBKey, { alpha });
     }
   };
@@ -64,15 +89,16 @@ export const ColorSwatchPicker: React.FC<ColorSwatchPickerProps> = ({ colorKey, 
   };
 
   const handleReset = () => {
-    const def = defaultColors[colorKey];
-    setColor(colorKey, def);
-    if (teamBKey && colorsLinked) setColor(teamBKey, def);
+    const def = defaultColors[currentKey];
+    setColor(currentKey, def);
+    if (currentKey === colorKey && teamBKey && colorsLinked) {
+      setColor(teamBKey, defaultColors[teamBKey]);
+    }
   };
 
   return (
     <div style={{ marginBottom: 6 }}>
-      <button
-        onClick={() => setOpen(!open)}
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -80,43 +106,69 @@ export const ColorSwatchPicker: React.FC<ColorSwatchPickerProps> = ({ colorKey, 
           width: '100%',
           background: 'transparent',
           border: 'none',
-          cursor: 'pointer',
           padding: '5px 0',
         }}
-        id={`color-toggle-${colorKey}`}
+        id={`color-toggle-container-${colorKey}`}
       >
-        {/* Swatch */}
+        {/* Swatch A */}
         <div
           className="color-swatch"
+          onClick={() => {
+            setActiveTab('A');
+            setOpen(!open || activeTab !== 'A');
+          }}
           style={{
             background: cfg.color,
             opacity: cfg.alpha,
-            boxShadow: open ? `0 0 0 2px ${cfg.color}40` : undefined,
+            boxShadow: open && currentTab === 'A' ? `0 0 0 2px ${cfg.color}40` : undefined,
+            borderColor: open && currentTab === 'A' ? 'var(--color-text-primary)' : undefined,
           }}
+          title="สีทีม A"
         />
         {teamBKey && !colorsLinked && linkedCfg && (
           <div
             className="color-swatch"
-            style={{ background: linkedCfg.color, opacity: linkedCfg.alpha }}
+            onClick={() => {
+              setActiveTab('B');
+              setOpen(!open || activeTab !== 'B');
+            }}
+            style={{ 
+              background: linkedCfg.color, 
+              opacity: linkedCfg.alpha,
+              boxShadow: open && currentTab === 'B' ? `0 0 0 2px ${linkedCfg.color}40` : undefined,
+              borderColor: open && currentTab === 'B' ? 'var(--color-text-primary)' : undefined,
+            }}
+            title="สีทีม B"
           />
         )}
-        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1, textAlign: 'left' }}>
-          {label}
-        </span>
-        {showLinkedLabel && (
-          <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>
-            {colorsLinked ? 'A=B' : 'A/B'}
-          </span>
-        )}
-        <ChevronDown
-          size={12}
-          style={{
-            color: 'var(--color-text-muted)',
-            transform: open ? 'rotate(180deg)' : 'none',
-            transition: 'transform 0.15s',
+        <div 
+          onClick={() => setOpen(!open)}
+          style={{ 
+            display: 'flex', 
+            flex: 1, 
+            alignItems: 'center', 
+            gap: 8,
+            cursor: 'pointer' 
           }}
-        />
-      </button>
+        >
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1, textAlign: 'left' }}>
+            {label} {teamBKey ? ' A/B' : ''}
+          </span>
+          {showLinkedLabel && (
+            <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>
+              {colorsLinked ? 'A=B' : 'แยก'}
+            </span>
+          )}
+          <ChevronDown
+            size={12}
+            style={{
+              color: 'var(--color-text-muted)',
+              transform: open ? 'rotate(180deg)' : 'none',
+              transition: 'transform 0.15s',
+            }}
+          />
+        </div>
+      </div>
 
       {open && (
         <div
@@ -130,26 +182,47 @@ export const ColorSwatchPicker: React.FC<ColorSwatchPickerProps> = ({ colorKey, 
           }}
         >
           <HexColorPicker
-            color={cfg.color}
+            color={activeColor}
             onChange={handleColorChange}
             style={{ width: '100%', height: 140 }}
           />
+          
+          {isGradient && (
+            <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+              {stops.map((stop, i) => (
+                <div
+                  key={i}
+                  onClick={() => setActiveStopIndex(i)}
+                  style={{
+                    flex: 1,
+                    height: 24,
+                    background: stop.color,
+                    border: `2px solid ${activeStopIndex === i ? 'var(--color-text-primary)' : 'transparent'}`,
+                    borderRadius: 4,
+                    cursor: 'pointer'
+                  }}
+                  title={`Stop ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
 
           <div style={{ marginTop: 10, display: 'flex', gap: 6, alignItems: 'center' }}>
             <input
               type="text"
               className="input-text"
-              defaultValue={cfg.color}
+              key={currentKey + activeColor + activeStopIndex}
+              defaultValue={activeColor}
               onBlur={handleHexInput}
               placeholder="#000000"
               style={{ fontFamily: 'monospace', flex: 1 }}
-              id={`hex-input-${colorKey}`}
+              id={`hex-input-${currentKey}`}
             />
             <button
               className="btn btn-ghost btn-icon"
               onClick={handleReset}
               title="Reset สี"
-              id={`reset-color-${colorKey}`}
+              id={`reset-color-${currentKey}`}
             >
               <RotateCcw size={12} />
             </button>
@@ -159,14 +232,14 @@ export const ColorSwatchPicker: React.FC<ColorSwatchPickerProps> = ({ colorKey, 
           <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>Opacity</span>
-              <span className="slider-value">{Math.round(cfg.alpha * 100)}%</span>
+              <span className="slider-value">{Math.round(currentCfg.alpha * 100)}%</span>
             </div>
             <input
               type="range"
               min="0" max="1" step="0.01"
-              value={cfg.alpha}
+              value={currentCfg.alpha}
               onChange={handleAlphaChange}
-              id={`alpha-slider-${colorKey}`}
+              id={`alpha-slider-${currentKey}`}
             />
           </div>
 
@@ -177,15 +250,43 @@ export const ColorSwatchPicker: React.FC<ColorSwatchPickerProps> = ({ colorKey, 
               {(['solid', 'linear', 'vertical', 'horizontal'] as const).map((t) => (
                 <button
                   key={t}
-                  className={`segment-option ${cfg.type === t ? 'active' : ''}`}
-                  onClick={() => setColor(colorKey, { type: t })}
-                  id={`gradient-type-${colorKey}-${t}`}
+                  className={`segment-option ${currentCfg.type === t ? 'active' : ''}`}
+                  onClick={() => {
+                    const extra = t === 'linear' && currentCfg.angle === undefined ? { angle: 90 } : {};
+                    setColor(currentKey, { type: t, ...extra });
+                    if (currentKey === colorKey && teamBKey && colorsLinked) {
+                      setColor(teamBKey, { type: t, ...extra });
+                    }
+                  }}
+                  id={`gradient-type-${currentKey}-${t}`}
                 >
                   {t === 'solid' ? 'Solid' : t === 'linear' ? 'Linear' : t === 'vertical' ? 'Vert.' : 'Horiz.'}
                 </button>
               ))}
             </div>
           </div>
+          
+          {currentCfg.type === 'linear' && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>องศา (Angle)</span>
+                <span className="slider-value">{currentCfg.angle ?? 90}°</span>
+              </div>
+              <input
+                type="range"
+                min="0" max="360" step="1"
+                value={currentCfg.angle ?? 90}
+                onChange={(e) => {
+                  const angle = parseInt(e.target.value, 10);
+                  setColor(currentKey, { angle });
+                  if (currentKey === colorKey && teamBKey && colorsLinked) {
+                    setColor(teamBKey, { angle });
+                  }
+                }}
+                id={`angle-slider-${currentKey}`}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

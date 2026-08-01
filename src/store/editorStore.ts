@@ -17,7 +17,7 @@ import type {
   Dimensions,
 } from '../types/editor';
 import { useHistoryStore } from './historyStore';
-
+import { buildThemeFromPalette } from '../lib/themeEngine';
 // ── Default values ────────────────────────────────────────────
 const defaultColor = (color: string, alpha = 1): ColorConfig => ({
   type: 'solid',
@@ -123,7 +123,7 @@ interface EditorStore extends EditorState {
   // Colors
   setColor: (key: keyof EditorColors, config: Partial<ColorConfig>) => void;
   setColorsLinked: (linked: boolean) => void;
-  applyPaletteTheme: (palette: LogoPalette) => void;
+  applyPaletteTheme: (palette: LogoPalette, variant?: number) => void;
   resetColors: () => void;
 
   // Layout
@@ -232,9 +232,9 @@ export const useEditorStore = create<EditorStore>()(
 
       setColorsLinked: (linked) => set(() => ({ colorsLinked: linked })),
 
-      applyPaletteTheme: (palette) => {
+      applyPaletteTheme: (palette, variant = 0) => {
         withHistory(get, set, (s) => ({
-          colors: buildColorsFromPalette(palette, s.colors),
+          colors: buildColorsFromPalette(palette, s.colors, variant),
         }));
       },
 
@@ -373,44 +373,16 @@ export const useEditorStore = create<EditorStore>()(
 // ── Theme builder from palette ────────────────────────────────
 function buildColorsFromPalette(
   palette: LogoPalette,
-  current: EditorColors
+  current: EditorColors,
+  variant: number = 0
 ): EditorColors {
-  const { dominant, secondary, accent, isDark, isGold } = palette;
-
-  const frame = isDark ? darken(dominant, 0.3) : darken(dominant, 0.5);
-  const highlight = isGold ? '#f59e0b' : lighten(accent, 0.3);
-  const glow = accent;
-
+  const newThemeColors = buildThemeFromPalette(palette, variant).colors;
+  
   return {
     ...current,
-    framePrimary: { type: 'linear', color: frame, alpha: 1, stops: [
-      { offset: 0, color: lighten(frame, 0.1) },
-      { offset: 1, color: darken(frame, 0.2) },
-    ]},
-    frameInner: defaultColor(darken(frame, 0.15)),
-    teamABg: defaultColor(darken(dominant, 0.4)),
-    teamBBg: defaultColor(darken(dominant, 0.4)),
-    scoreABg: defaultColor(darken(secondary, 0.3)),
-    scoreBBg: defaultColor(darken(secondary, 0.3)),
-    highlight: defaultColor(highlight),
-    glow: { ...current.glow, color: glow },
-    logoPlateBg: { ...current.logoPlateBg, color: darken(dominant, 0.5) },
+    ...newThemeColors,
+    // Preserve yellow and red cards as requested by user
+    yellowCard: current.yellowCard,
+    redCard: current.redCard,
   };
-}
-
-// Simple color helpers
-function darken(hex: string, amount: number): string {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const r = Math.max(0, (num >> 16) - Math.round(255 * amount));
-  const g = Math.max(0, ((num >> 8) & 0xff) - Math.round(255 * amount));
-  const b = Math.max(0, (num & 0xff) - Math.round(255 * amount));
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
-
-function lighten(hex: string, amount: number): string {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const r = Math.min(255, (num >> 16) + Math.round(255 * amount));
-  const g = Math.min(255, ((num >> 8) & 0xff) + Math.round(255 * amount));
-  const b = Math.min(255, (num & 0xff) + Math.round(255 * amount));
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }

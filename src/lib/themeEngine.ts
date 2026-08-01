@@ -65,6 +65,28 @@ function hexToHsl(hex: string): [number, number, number] {
   return [h / 6, s, l];
 }
 
+function hslToHex(h: number, s: number, l: number): string {
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  return rgbToHex(r * 255, g * 255, b * 255);
+}
+
 // ── Theme Engine ──────────────────────────────────────────────
 
 export interface ThemeResult {
@@ -72,43 +94,81 @@ export interface ThemeResult {
   suggestedTemplate: TemplateId;
 }
 
-export function buildThemeFromPalette(palette: LogoPalette): ThemeResult {
+export function buildThemeFromPalette(palette: LogoPalette, variant: number = 0): ThemeResult {
   const { dominant, secondary, accent, isDark, isVibrant, isGold, aspectRatio } = palette;
 
-  // Frame should be a deeply tinted dark shade to make vibrant elements pop
-  // Instead of turning it completely muddy, we keep a rich dark tint.
-  const frameBase = darken(dominant, 0.7);
-  const frameInner = darken(dominant, 0.85);
-  
-  // Highlight should be extremely vibrant and bright
-  const highlightColor = isGold
-    ? '#f59e0b'
-    : isVibrant
-    ? lighten(accent, 0.15) // Keep it punchy
-    : '#3b82f6';
-  const glowColor = isGold ? '#f59e0b' : accent;
+  const [domH, domS, domL] = hexToHsl(dominant);
+  const [accH, accS, accL] = hexToHsl(accent);
+  const [secH, secS, secL] = hexToHsl(secondary);
 
-  // Team backgrounds use the dominant color but ensured to be rich and legible.
-  // If the logo is already dark, use it directly. If it's very bright, darken just enough for white text.
-  const teamBg = isDark ? lighten(dominant, 0.05) : darken(dominant, 0.35);
-  
-  // Score backgrounds use a deeper shade for contrast, mixed slightly with the secondary color for richness
-  const scoreBg = mix(darken(teamBg, 0.3), secondary, 0.15);
-  
-  const plateBg = darken(dominant, 0.5);
+  let frameBase: string, frameInner: string, teamBg: string, scoreBg: string, plateBg: string;
+  let highlightColor = accent;
+  let glowColor = accent;
+
+  // Default highlight logic
+  if (isGold) {
+    highlightColor = '#fbbf24';
+    glowColor = '#f59e0b';
+  } else {
+    highlightColor = hslToHex(accH, Math.max(accS, 0.7), Math.max(accL, 0.6));
+    glowColor = hslToHex(accH, Math.max(accS, 0.6), Math.max(accL, 0.5));
+  }
+
+  // Variant mappings
+  if (variant === 1) {
+    // Variant 1: Vibrant / Neon
+    frameBase = hslToHex(domH, Math.min(domS, 0.8), 0.15);
+    frameInner = hslToHex(domH, Math.min(domS, 0.8), 0.20);
+    teamBg = hslToHex(domH, Math.max(0.6, domS), 0.25);
+    scoreBg = hslToHex(domH, Math.max(0.4, domS), 0.15);
+    plateBg = hslToHex(domH, Math.max(0.5, domS), 0.12);
+  } else if (variant === 2) {
+    // Variant 2: Monochrome / Deep Dark
+    frameBase = hslToHex(domH, Math.min(domS, 0.1), 0.05);
+    frameInner = hslToHex(domH, Math.min(domS, 0.1), 0.08);
+    teamBg = hslToHex(domH, Math.min(domS, 0.15), 0.08);
+    scoreBg = hslToHex(domH, Math.min(domS, 0.1), 0.04);
+    plateBg = hslToHex(domH, Math.min(domS, 0.1), 0.03);
+    if (!isGold) {
+      highlightColor = hslToHex(accH, Math.max(accS, 0.4), 0.5);
+      glowColor = hslToHex(accH, Math.max(accS, 0.3), 0.4);
+    }
+  } else if (variant === 3) {
+    // Variant 3: Alternative / Secondary Focused
+    frameBase = hslToHex(secH, Math.min(secS, 0.4), 0.10);
+    frameInner = hslToHex(secH, Math.min(secS, 0.5), 0.14);
+    teamBg = hslToHex(secH, Math.min(secS, 0.6), 0.18);
+    scoreBg = hslToHex(secH, Math.min(secS, 0.3), 0.12);
+    plateBg = hslToHex(secH, Math.min(secS, 0.3), 0.08);
+  } else {
+    // Variant 0: Premium Dark (Default)
+    frameBase = hslToHex(domH, Math.min(domS, 0.4), 0.08);
+    frameInner = hslToHex(domH, Math.min(domS, 0.5), 0.12);
+    teamBg = hslToHex(domH, Math.min(domS, 0.6), 0.16);
+    scoreBg = hslToHex(domH, Math.min(domS, 0.3), 0.10);
+    plateBg = hslToHex(domH, Math.min(domS, 0.3), 0.06);
+  }
+
+  // Helper for premium, smooth gradients: top-left (lighter) to bottom-right (darker)
+  const makePremiumGradient = (baseHex: string, lDiff: number, sDiff: number) => {
+    const [h, s, l] = hexToHsl(baseHex);
+    const stopA = hslToHex(h, Math.min(1, s + sDiff), Math.min(1, Math.max(0, l + lDiff)));
+    const stopB = hslToHex(h, Math.max(0, s - sDiff), Math.max(0, Math.min(1, l - lDiff)));
+    return linear(baseHex, stopA, stopB);
+  };
 
   const colors: EditorColors = {
-    teamABg: linear(teamBg, lighten(teamBg, 0.1), darken(teamBg, 0.15)),
-    teamBBg: linear(teamBg, lighten(teamBg, 0.1), darken(teamBg, 0.15)),
-    scoreABg: linear(scoreBg, lighten(scoreBg, 0.12), darken(scoreBg, 0.1)),
-    scoreBBg: linear(scoreBg, lighten(scoreBg, 0.12), darken(scoreBg, 0.1)),
-    framePrimary: linear(frameBase, lighten(frameBase, 0.1), darken(frameBase, 0.15)),
+    teamABg: makePremiumGradient(teamBg, 0.04, 0.1),
+    teamBBg: makePremiumGradient(teamBg, 0.04, 0.1),
+    scoreABg: makePremiumGradient(scoreBg, 0.03, 0.05),
+    scoreBBg: makePremiumGradient(scoreBg, 0.03, 0.05),
+    framePrimary: makePremiumGradient(frameBase, 0.03, 0.05),
     frameInner: solid(frameInner),
     highlight: solid(highlightColor),
-    glow: { type: 'solid', color: glowColor, alpha: 0.7 },
+    glow: { type: 'solid', color: glowColor, alpha: 0.8 },
     shadow: solid('#000000', 0.85),
-    timeSlot: linear(darken(dominant, 0.6), darken(dominant, 0.5), darken(dominant, 0.7)),
-    halfSlot: linear(darken(dominant, 0.6), darken(dominant, 0.5), darken(dominant, 0.7)),
+    timeSlot: makePremiumGradient(hslToHex(domH, Math.min(domS, 0.2), 0.12), 0.02, 0),
+    halfSlot: makePremiumGradient(hslToHex(domH, Math.min(domS, 0.2), 0.10), 0.02, 0),
     yellowCard: solid('#ca8a04'),
     redCard: solid('#dc2626'),
     logoPlateBg: { type: 'solid', color: plateBg, alpha: 0.95 },
