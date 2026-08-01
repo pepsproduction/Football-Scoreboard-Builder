@@ -1,4 +1,4 @@
-﻿// src/components/logo/LogoUploader.tsx
+// src/components/logo/LogoUploader.tsx
 import React, { useRef, useState, useCallback } from 'react';
 import { Upload, X, AlertCircle } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
@@ -49,7 +49,7 @@ const LogoUploader: React.FC = () => {
       applyPaletteTheme(palette);
       setTemplate(theme.suggestedTemplate);
       setActiveStep(2);
-    } catch (err) {
+    } catch {
       setError('ไม่สามารถประมวลผลภาพได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsProcessing(false);
