@@ -1,6 +1,6 @@
 // src/components/logo/PaletteDisplay.tsx
 import React, { useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+
 import { useEditorStore } from '../../store/editorStore';
 import { buildThemeFromPalette } from '../../lib/themeEngine';
 
@@ -13,12 +13,7 @@ const PaletteDisplay: React.FC = () => {
 
   if (!palette) return null;
 
-  const handleReapplyTheme = () => {
-    if (!palette) return;
-    applyPaletteTheme(palette);
-    const theme = buildThemeFromPalette(palette);
-    setTemplate(theme.suggestedTemplate);
-  };
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

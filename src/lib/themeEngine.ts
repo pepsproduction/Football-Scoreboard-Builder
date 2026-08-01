@@ -34,21 +34,7 @@ function rgbToHex(r: number, g: number, b: number): string {
   );
 }
 
-function darken(hex: string, amt: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  return rgbToHex(r * (1 - amt), g * (1 - amt), b * (1 - amt));
-}
 
-function lighten(hex: string, amt: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  return rgbToHex(r + (255 - r) * amt, g + (255 - g) * amt, b + (255 - b) * amt);
-}
-
-function mix(a: string, b: string, t: number): string {
-  const [ar, ag, ab] = hexToRgb(a);
-  const [br, bg, bb] = hexToRgb(b);
-  return rgbToHex(ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t);
-}
 
 function hexToHsl(hex: string): [number, number, number] {
   let [r, g, b] = hexToRgb(hex);
@@ -97,9 +83,9 @@ export interface ThemeResult {
 export function buildThemeFromPalette(palette: LogoPalette, variant: number = 0): ThemeResult {
   const { dominant, secondary, accent, isDark, isVibrant, isGold, aspectRatio } = palette;
 
-  const [domH, domS, domL] = hexToHsl(dominant);
+  const [domH, domS] = hexToHsl(dominant);
   const [accH, accS, accL] = hexToHsl(accent);
-  const [secH, secS, secL] = hexToHsl(secondary);
+  const [secH, secS] = hexToHsl(secondary);
 
   let frameBase: string, frameInner: string, teamBg: string, scoreBg: string, plateBg: string;
   let highlightColor = accent;
