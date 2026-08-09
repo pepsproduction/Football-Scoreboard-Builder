@@ -1,219 +1,278 @@
-// src/lib/paletteExtractor.ts
-// Uses ColorThief to extract dominant colors from an uploaded image
-import type { LogoPalette } from '../types/editor';
+// Deterministic logo palette extraction.
+// Sampling is aspect-ratio safe and clustering happens in OKLab so visually
+// similar colors stay together more reliably than with raw RGB distance.
+import type { LogoPalette, LogoPaletteColor } from '../types/editor';
 
-// No external dependencies needed.
+type Rgb = [number, number, number];
+type Lab = [number, number, number];
 
-// Extract colors smartly using a fast K-means clustering on non-transparent pixels
-function getSmartColors(img: HTMLImageElement, maxColors: number): number[][] {
+interface WeightedSample {
+  rgb: Rgb;
+  lab: Lab;
+  weight: number;
+}
+
+interface ClusterColor extends LogoPaletteColor {
+  rgb: Rgb;
+}
+
+const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+
+function rgbToHex(rgb: Rgb): string {
+  return `#${rgb.map((value) => Math.round(Math.min(255, Math.max(0, value))).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function getSaturation(rgb: Rgb): number {
+  const values = rgb.map((value) => value / 255);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  return max === 0 ? 0 : (max - min) / max;
+}
+
+function srgbToLinear(value: number): number {
+  const normalized = value / 255;
+  return normalized <= 0.04045
+    ? normalized / 12.92
+    : ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function linearToSrgb(value: number): number {
+  const normalized = value <= 0.0031308
+    ? 12.92 * value
+    : 1.055 * (value ** (1 / 2.4)) - 0.055;
+  return clamp(normalized) * 255;
+}
+
+function rgbToOklab(rgb: Rgb): Lab {
+  const r = srgbToLinear(rgb[0]);
+  const g = srgbToLinear(rgb[1]);
+  const b = srgbToLinear(rgb[2]);
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+  const lRoot = Math.cbrt(Math.max(0, l));
+  const mRoot = Math.cbrt(Math.max(0, m));
+  const sRoot = Math.cbrt(Math.max(0, s));
+  return [
+    0.2104542553 * lRoot + 0.793617785 * mRoot - 0.0040720468 * sRoot,
+    1.9779984951 * lRoot - 2.428592205 * mRoot + 0.4505937099 * sRoot,
+    0.0259040371 * lRoot + 0.7827717662 * mRoot - 0.808675766 * sRoot,
+  ];
+}
+
+function oklabToRgb(lab: Lab): Rgb {
+  const [l, a, b] = lab;
+  const lRoot = l + 0.3963377774 * a + 0.2158037573 * b;
+  const mRoot = l - 0.1055613458 * a - 0.0638541728 * b;
+  const sRoot = l - 0.0894841775 * a - 1.291485548 * b;
+  const lr = lRoot ** 3;
+  const mr = mRoot ** 3;
+  const sr = sRoot ** 3;
+  return [
+    linearToSrgb(4.0767416621 * lr - 3.3077115913 * mr + 0.2309699292 * sr),
+    linearToSrgb(-1.2684380046 * lr + 2.6097574011 * mr - 0.3413193965 * sr),
+    linearToSrgb(-0.0041960863 * lr - 0.7034186147 * mr + 1.707614701 * sr),
+  ];
+}
+
+function labDistance(a: Lab, b: Lab): number {
+  return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+}
+
+function relativeLuminance(rgb: Rgb): number {
+  const [r, g, b] = rgb.map(srgbToLinear);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function getContainedPixels(img: HTMLImageElement): WeightedSample[] {
   const canvas = document.createElement('canvas');
-  const size = 100;
+  const size = 128;
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  
-  ctx.drawImage(img, 0, 0, size, size);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return [];
+
+  const sourceWidth = img.naturalWidth || img.width || 1;
+  const sourceHeight = img.naturalHeight || img.height || 1;
+  const scale = Math.min(size / sourceWidth, size / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  const offsetX = (size - drawWidth) / 2;
+  const offsetY = (size - drawHeight) / 2;
+  ctx.clearRect(0, 0, size, size);
+  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+
   const data = ctx.getImageData(0, 0, size, size).data;
-  
-  const pixels: number[][] = [];
-  
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 20) continue; // Ignore highly transparent pixels
-    
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    
-    // Ignore near white, near black, or grays to focus on vibrant colors, unless they're the only colors
-    const isBoring = 
-      (r > 240 && g > 240 && b > 240) || 
-      (r < 25 && g < 25 && b < 25) ||
-      (Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && Math.abs(r - b) < 15);
-    
-    if (!isBoring || Math.random() < 0.05) { // Down-sample boring colors heavily to prioritize vibrant ones
-      pixels.push([r, g, b]);
+  const samples: WeightedSample[] = [];
+  // A fixed stride keeps the extractor fast and repeatable.
+  for (let y = 0; y < size; y += 2) {
+    for (let x = 0; x < size; x += 2) {
+      const index = (y * size + x) * 4;
+      const alpha = data[index + 3] / 255;
+      if (alpha < 0.13) continue;
+
+      // Blend anti-aliased edges with a neutral mid-gray instead of letting
+      // transparent pixels create false black/white clusters.
+      const rgb: Rgb = [
+        data[index] * alpha + 128 * (1 - alpha),
+        data[index + 1] * alpha + 128 * (1 - alpha),
+        data[index + 2] * alpha + 128 * (1 - alpha),
+      ];
+      const saturation = getSaturation(rgb);
+      const brightness = relativeLuminance(rgb);
+      const neutralWeight = saturation < 0.06 && (brightness < 0.015 || brightness > 0.9) ? 0.35 : 1;
+      const weight = Math.max(0.05, alpha * neutralWeight);
+      samples.push({ rgb, lab: rgbToOklab(rgb), weight });
     }
   }
+  return samples;
+}
 
-  // If we rejected too many (e.g., pure black/white logo), fall back to all non-transparent pixels
-  if (pixels.length < 50) {
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] > 50) {
-        pixels.push([data[i], data[i+1], data[i+2]]);
-      }
-    }
-  }
-  
-  if (pixels.length === 0) return [[30, 50, 100]];
-
-  // K-means++ initialization
-  let centroids: number[][] = [];
-  centroids.push([...pixels[Math.floor(Math.random() * pixels.length)]]);
-  
-  for (let i = 1; i < maxColors; i++) {
-    let maxDist = -1;
-    let nextCenter = pixels[0];
-    for (const p of pixels) {
-      let minDist = Infinity;
-      for (const c of centroids) {
-        const dist = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
-        if (dist < minDist) minDist = dist;
-      }
-      if (minDist > maxDist) {
-        maxDist = minDist;
-        nextCenter = p;
-      }
-    }
-    centroids.push([...nextCenter]);
+function getSmartColors(img: HTMLImageElement, maxColors: number): ClusterColor[] {
+  const samples = getContainedPixels(img);
+  if (samples.length === 0) {
+    const fallback: Rgb = [30, 50, 100];
+    return [{ hex: rgbToHex(fallback), rgb: fallback, weight: 1, saturation: getSaturation(fallback), luminance: relativeLuminance(fallback) }];
   }
 
-  // K-means iteration
-  let clusters: number[][][] = [];
-  for (let iter = 0; iter < 10; iter++) {
-    clusters = Array.from({ length: maxColors }, () => []);
-    for (const p of pixels) {
-      let minDist = Infinity;
+  const totalWeight = samples.reduce((sum, sample) => sum + sample.weight, 0);
+  const averageLab: Lab = samples.reduce<Lab>(
+    (sum, sample) => [
+      sum[0] + sample.lab[0] * sample.weight,
+      sum[1] + sample.lab[1] * sample.weight,
+      sum[2] + sample.lab[2] * sample.weight,
+    ],
+    [0, 0, 0] as Lab
+  ).map((value) => value / totalWeight) as Lab;
+
+  const centroids: Lab[] = [averageLab];
+  while (centroids.length < Math.min(maxColors, samples.length)) {
+    let best = samples[0];
+    let bestScore = -Infinity;
+    for (const sample of samples) {
+      const nearest = Math.min(...centroids.map((centroid) => labDistance(sample.lab, centroid)));
+      const score = nearest * (0.6 + getSaturation(sample.rgb));
+      if (score > bestScore) {
+        bestScore = score;
+        best = sample;
+      }
+    }
+    centroids.push([...best.lab]);
+  }
+
+  let clusters: WeightedSample[][] = [];
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    clusters = Array.from({ length: centroids.length }, () => [] as WeightedSample[]);
+    for (const sample of samples) {
       let closest = 0;
-      for (let i = 0; i < maxColors; i++) {
-        const c = centroids[i];
-        const dist = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
-        if (dist < minDist) { minDist = dist; closest = i; }
+      let closestDistance = Infinity;
+      for (let i = 0; i < centroids.length; i += 1) {
+        const distance = labDistance(sample.lab, centroids[i]);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = i;
+        }
       }
-      clusters[closest].push(p);
+      clusters[closest].push(sample);
     }
-    
+
     let moved = false;
-    for (let i = 0; i < maxColors; i++) {
+    for (let i = 0; i < clusters.length; i += 1) {
       if (clusters[i].length === 0) continue;
-      let sumR = 0, sumG = 0, sumB = 0;
-      for (const p of clusters[i]) {
-        sumR += p[0]; sumG += p[1]; sumB += p[2];
-      }
-      const newR = sumR / clusters[i].length;
-      const newG = sumG / clusters[i].length;
-      const newB = sumB / clusters[i].length;
-      if (Math.abs(centroids[i][0] - newR) > 1 || Math.abs(centroids[i][1] - newG) > 1 || Math.abs(centroids[i][2] - newB) > 1) moved = true;
-      centroids[i] = [newR, newG, newB];
+      const weight = clusters[i].reduce((sum, sample) => sum + sample.weight, 0);
+      const next: Lab = clusters[i].reduce<Lab>(
+        (sum, sample) => [
+          sum[0] + sample.lab[0] * sample.weight,
+          sum[1] + sample.lab[1] * sample.weight,
+          sum[2] + sample.lab[2] * sample.weight,
+        ],
+        [0, 0, 0] as Lab
+      ).map((value) => value / weight) as Lab;
+      if (labDistance(centroids[i], next) > 0.00002) moved = true;
+      centroids[i] = next;
     }
     if (!moved) break;
   }
-  
-  // Sort clusters by size
-  const sortedClusters = clusters.filter(c => c.length > 0).sort((a, b) => b.length - a.length);
-  const result = sortedClusters.map(c => {
-    let r=0,g=0,b=0;
-    for(const p of c) { r+=p[0]; g+=p[1]; b+=p[2]; }
-    return [Math.round(r/c.length), Math.round(g/c.length), Math.round(b/c.length)];
-  });
 
-  return result.length > 0 ? result : [[30, 50, 100]];
+  const colors = clusters
+    .map((cluster, index) => {
+      const weight = cluster.reduce((sum, sample) => sum + sample.weight, 0);
+      const rgb = oklabToRgb(centroids[index]);
+      return {
+        hex: rgbToHex(rgb),
+        rgb,
+        weight: weight / totalWeight,
+        saturation: getSaturation(rgb),
+        luminance: relativeLuminance(rgb),
+      };
+    })
+    .filter((color) => color.weight > 0)
+    .sort((a, b) => b.weight - a.weight);
+
+  return colors.length > 0 ? colors : [{ hex: '#1e3264', rgb: [30, 50, 100], weight: 1, saturation: 0.7, luminance: 0.03 }];
 }
 
-
-/** Convert [r,g,b] array to hex string */
-function rgbToHex(rgb: number[]): string {
-  return (
-    '#' +
-    rgb
-      .map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0'))
-      .join('')
-  );
+function hueDistance(a: string, b: string): number {
+  const toHue = (hex: string) => {
+    const [r, g, blue] = hex.slice(1).match(/.{2}/g)!.map((part) => parseInt(part, 16) / 255);
+    const max = Math.max(r, g, blue);
+    const min = Math.min(r, g, blue);
+    if (max === min) return 0;
+    const delta = max - min;
+    let hue = max === r ? (g - blue) / delta : max === g ? (blue - r) / delta + 2 : (r - g) / delta + 4;
+    if (hue < 0) hue += 6;
+    return hue * 60;
+  };
+  const difference = Math.abs(toHue(a) - toHue(b));
+  return Math.min(difference, 360 - difference);
 }
 
-/** Get perceived brightness 0–255 */
-function getBrightness(rgb: number[]): number {
-  return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
-}
-
-/** Get saturation 0–1 */
-function getSaturation(rgb: number[]): number {
-  const r = rgb[0] / 255;
-  const g = rgb[1] / 255;
-  const b = rgb[2] / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  if (max === 0) return 0;
-  return (max - min) / max;
-}
-
-/** Determine if color is "gold-ish" */
-function isGoldish(rgb: number[]): boolean {
-  const [r, g, b] = rgb;
-  return r > 180 && g > 140 && b < 80 && r > g && g > b;
-}
-
-/**
- * Extract color palette from an image element.
- * The image must already be loaded (naturalWidth > 0).
- */
+/** Extract a stable, role-aware palette from an already loaded logo. */
 export async function extractPalette(imgEl: HTMLImageElement): Promise<LogoPalette> {
   const canvas = document.createElement('canvas');
-  canvas.width = imgEl.naturalWidth || imgEl.width;
-  canvas.height = imgEl.naturalHeight || imgEl.height;
-  const ctx = canvas.getContext('2d')!;
+  canvas.width = imgEl.naturalWidth || imgEl.width || 1;
+  canvas.height = imgEl.naturalHeight || imgEl.height || 1;
 
-  ctx.drawImage(imgEl, 0, 0);
-
-  const tempImg = new Image();
-  await new Promise<void>((resolve) => {
-    tempImg.onload = () => resolve();
-    tempImg.src = canvas.toDataURL('image/png');
-  });
-
-  let dominant: number[];
-  let palette: number[][];
-
+  let extracted: ClusterColor[];
   try {
-    const extractedColors = getSmartColors(tempImg, 6);
-    // Find the most frequent color that isn't too desaturated/extreme
-    const vibrant = extractedColors.filter(c => {
-      const sat = getSaturation(c);
-      const bright = getBrightness(c);
-      return sat > 0.15 && bright > 25 && bright < 235;
-    });
-    
-    dominant = vibrant.length > 0 ? vibrant[0] : extractedColors[0];
-    palette = extractedColors;
+    extracted = getSmartColors(imgEl, 6);
   } catch {
-    // Fallback if extraction fails
-    dominant = [30, 50, 100];
-    palette = [
-      [30, 50, 100],
-      [60, 90, 160],
-      [100, 140, 200],
-      [200, 180, 80],
-      [220, 220, 240],
-    ];
+    const fallback: Rgb = [30, 50, 100];
+    extracted = [{ hex: rgbToHex(fallback), rgb: fallback, weight: 1, saturation: 0.7, luminance: 0.03 }];
   }
 
-  // Sort palette by saturation descending → more vibrant first
-  const sorted = [...palette].sort(
-    (a, b) => getSaturation(b) - getSaturation(a)
-  );
-
-  const colors = sorted.slice(0, 5).map(rgbToHex);
-  const dominantHex = rgbToHex(dominant);
-  const secondaryHex = colors[1] || dominantHex;
-  const accentHex = colors[0] || dominantHex; // most saturated
-
-  const brightness = getBrightness(dominant);
-  const saturation = getSaturation(sorted[0] || dominant);
+  const dominantColor = extracted[0];
+  const accentColor = [...extracted]
+    .filter((color) => color.saturation > 0.18 && color.luminance > 0.03 && color.luminance < 0.88)
+    .sort((a, b) => (b.weight * 0.58 + b.saturation * 0.42) - (a.weight * 0.58 + a.saturation * 0.42))[0] || dominantColor;
+  const secondaryColor = extracted.find((color) => color.hex !== dominantColor.hex && hueDistance(color.hex, dominantColor.hex) > 18) || extracted[1] || dominantColor;
+  const colors = extracted.slice(0, 5).map((color) => color.hex);
+  const isGold = extracted.some((color) => {
+    const [r, g, b] = color.rgb;
+    return r > 170 && g > 120 && b < 110 && r > g && g > b;
+  });
+  const dominantLuminance = dominantColor.luminance;
+  const maximumSaturation = Math.max(...extracted.map((color) => color.saturation));
 
   return {
     colors,
-    dominant: dominantHex,
-    secondary: secondaryHex,
-    accent: accentHex,
-    isDark: brightness < 128,
-    isVibrant: saturation > 0.5,
-    isGold: isGoldish(dominant) || sorted.some(isGoldish),
+    dominant: dominantColor.hex,
+    secondary: secondaryColor.hex,
+    accent: accentColor.hex,
+    isDark: dominantLuminance < 0.32,
+    isVibrant: maximumSaturation > 0.48,
+    isGold,
     aspectRatio: canvas.width / canvas.height,
+    colorDetails: extracted.map(({ hex, weight, saturation, luminance }) => ({
+      hex,
+      weight: Math.round(weight * 1000) / 1000,
+      saturation: Math.round(saturation * 1000) / 1000,
+      luminance: Math.round(luminance * 1000) / 1000,
+    } satisfies LogoPaletteColor)),
   };
 }
 
-/**
- * Load an image from a data URL and return the element.
- */
+/** Load an image from a data URL and return the element. */
 export function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();

@@ -76,7 +76,7 @@ function dropShadow(strength: number) {
 interface ModuleIconProps {
   cx: number; cy: number;
   w: number; h: number;
-  type: 'time' | 'half' | 'yellow-card' | 'red-card';
+  type: 'time' | 'half' | 'yellow-card' | 'red-card' | 'foul';
   color: string;
 }
 
@@ -90,7 +90,7 @@ const ModuleIconShape: React.FC<ModuleIconProps> = ({ cx, cy, w, h, type, color 
   if (type === 'time') {
     // Tagged "preview-only" so sanitizer strips it during export → empty box remains
     return (
-      <Group name="preview-only">
+      <Group name="module-art">
         <Circle x={cx} y={cy} radius={r} stroke={color} strokeWidth={1.5} fill="transparent" />
         {[0, 90, 180, 270].map((deg, i) => {
           const a = (deg * Math.PI) / 180;
@@ -109,9 +109,18 @@ const ModuleIconShape: React.FC<ModuleIconProps> = ({ cx, cy, w, h, type, color 
   if (type === 'half') {
     // Tagged "preview-only" so sanitizer strips it during export → empty box remains
     return (
-      <Group name="preview-only">
+      <Group name="module-art">
         <Arc x={cx} y={cy} innerRadius={r * 0.55} outerRadius={r} angle={180} rotation={-90} fill={color} opacity={0.9} />
         <Arc x={cx} y={cy} innerRadius={r * 0.55} outerRadius={r} angle={180} rotation={90} fill={color} opacity={0.4} />
+      </Group>
+    );
+  }
+  if (type === 'foul') {
+    return (
+      <Group name="module-art">
+        {[0, 1, 2].map((index) => (
+          <Circle key={index} x={cx - r * 0.7 + index * r * 0.7} y={cy} radius={Math.max(2, r * 0.28)} fill={color} />
+        ))}
       </Group>
     );
   }
@@ -127,7 +136,7 @@ interface DraggableModuleProps {
   baseX: number;  // default position relative to scoreboard-group origin
   baseY: number;
   w: number; h: number;
-  modType: 'time' | 'half' | 'yellow-card' | 'red-card';
+  modType: 'time' | 'half' | 'yellow-card' | 'red-card' | 'foul';
   fillColor: string;
   highlightColor: string;
   size: number;
@@ -320,9 +329,9 @@ const MarginHandles: React.FC<MarginHandlesProps> = ({ sbW, sbH, margin, onMargi
           dragBoundFunc={(pos) => {
             // Constrain axis based on side
             if (side === 'top' || side === 'bottom') {
-              return { x: x + HSIZE / 2, y: pos.y }; // only vertical
+              return { x, y: pos.y }; // only vertical
             }
-            return { x: pos.x, y: y + HSIZE / 2 }; // only horizontal
+            return { x: pos.x, y }; // only horizontal
           }}
           onMouseEnter={(e) => {
             const stage = e.target.getStage();
@@ -385,10 +394,11 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
   }, [s.logoDataUrl]);
 
   const {
+    sport,
     layoutType, scorePosition, logoPosition,
     dimensions, styleMode, style, colors, modules,
     logoScale, logoRotation, logoSkewX, logoOffsetX, logoOffsetY,
-    logoPlateWidth, logoPadding, showLogoPlate,
+    logoPlateWidth, logoPlateHeight, logoPadding, showLogoPlate,
   } = s;
 
 
@@ -402,6 +412,9 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
   const shadowStr = style.shadowStrength;
   const cornerR = style.cornerRadius;
   const borderT = style.borderThickness;
+  const frameDepth = is3D ? Math.max(0, style.frameDepth || 0) : 0;
+  const styleSkew = Math.max(-0.5, Math.min(0.5, style.skewX || 0)) * 30;
+  const logoSkew = Math.max(-0.5, Math.min(0.5, logoSkewX || 0)) * 30;
 
   const sbW = dimensions.width;
   const sbH = dimensions.height;
@@ -476,6 +489,19 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
           fill="transparent"
           stroke={hexToRgba(colors.frameInner.color, colors.frameInner.alpha)}
           strokeWidth={1} />
+      )}
+      {frameDepth > 0 && (
+        <Rect
+          x={frameDepth}
+          y={frameDepth}
+          width={Math.max(1, sbW - frameDepth * 2)}
+          height={Math.max(1, sbH - frameDepth * 2)}
+          cornerRadius={Math.max(0, cornerR - frameDepth * 0.25)}
+          fill="transparent"
+          stroke={hexToRgba(colors.frameInner.color, Math.min(0.8, 0.25 + frameDepth / 40))}
+          strokeWidth={Math.max(1, Math.min(3, frameDepth / 5))}
+          listening={false}
+        />
       )}
       {bevel > 0 && (
         <Rect x={0} y={0} width={sbW} height={bevel * 0.5}
@@ -579,7 +605,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
             width={lw} 
             height={lh} 
             rotation={logoRotation}
-            skewX={(logoSkewX || 0) - (style.skewX || 0)}
+            skewX={logoSkew - styleSkew}
           />
         )}
         {!logoImg && (
@@ -598,6 +624,14 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     );
   };
 
+  const renderAboveLogo = () => {
+    if (logoPosition !== 'above') return null;
+    const plateW = Math.min(plateSizeW, Math.max(1, sbW - spacing * 2));
+    const plateH = Math.max(1, Math.min(Math.max(40, logoPlateHeight), Math.max(1, margin.top)));
+    const plateY = Math.max(-margin.top, -plateH - spacing);
+    return renderLogoPlate((sbW - plateW) / 2, plateY, plateW, plateH);
+  };
+
   const handleModuleOffset = useCallback(
     (key: keyof EditorModules, x: number, y: number) => setModuleOffset(key, x, y),
     [setModuleOffset]
@@ -610,7 +644,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
 
   const renderModule = (
     key: keyof EditorModules,
-    type: 'time' | 'half' | 'yellow-card' | 'red-card',
+    type: 'time' | 'half' | 'yellow-card' | 'red-card' | 'foul',
     baseX: number, baseY: number,
     w: number, h: number
   ) => {
@@ -628,7 +662,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     // Cards are preview-only — stripped on export
     if (isCard) {
       return (
-        <Group key={key} name="preview-only">
+        <Group key={key}>
           <DraggableModule
             moduleKey={key}
             baseX={baseX} baseY={baseY}
@@ -700,6 +734,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     const timeW = 64, timeH = 30;
     const halfW = 48, halfH = 30;
     const cardW = 32, cardH = 40;
+    const foulW = 54, foulH = 28;
 
     return (
       <>
@@ -722,6 +757,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
         {logoPosition === 'center' && totalCenter > 0 && renderLogoPlate(centerStart, 0, totalCenter, sbH)}
         {logoPosition === 'left' && renderLogoPlate(0, 0, logoPlateWidth + logoPadding * 2, sbH)}
         {logoPosition === 'right' && renderLogoPlate(sbW - logoPlateWidth - logoPadding * 2, 0, logoPlateWidth + logoPadding * 2, sbH)}
+        {renderAboveLogo()}
 
         {/* Dividers */}
         {[leftScoreX, leftScoreX + leftScoreW, rightScoreX, rightScoreX + rightScoreW]
@@ -738,6 +774,8 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
         {renderModule('yellowCardB', 'yellow-card', rightEnd - cardW - 4, teamY + teamH / 2 - cardH / 2, cardW, cardH)}
         {renderModule('redCardA', 'red-card', leftTeamX + cardW + 10, teamY + teamH / 2 - cardH / 2, cardW, cardH)}
         {renderModule('redCardB', 'red-card', rightEnd - cardW * 2 - 12, teamY + teamH / 2 - cardH / 2, cardW, cardH)}
+        {sport === 'basketball' && renderModule('foulA', 'foul', leftTeamX + leftTeamW / 2 - foulW / 2, sbH + 8, foulW, foulH)}
+        {sport === 'basketball' && renderModule('foulB', 'foul', rightTeamX + rightTeamW / 2 - foulW / 2, sbH + 8, foulW, foulH)}
       </>
     );
   };
@@ -747,7 +785,8 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     const rowH = Math.floor((sbH - spacing) / 2);
     const logoW = logoPlateWidth + logoPadding * 2;
     const contentX = logoPosition === 'left' ? logoW + spacing : spacing;
-    const contentW = sbW - contentX - spacing;
+    const rightLogoSpace = logoPosition === 'right' ? logoW + spacing : 0;
+    const contentW = sbW - contentX - spacing - rightLogoSpace;
     const scorePW = Math.min(52, contentW * 0.22);
     const teamAY = 0, teamBY = rowH + spacing;
     let teamAX = contentX, teamAW = contentW;
@@ -765,6 +804,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     }
 
     const cardW = 24, cardH = 30;
+    const foulW = 54, foulH = 26;
     return (
       <>
         <Rect x={teamAX} y={teamAY} width={Math.max(0, teamAW)} height={rowH}
@@ -781,6 +821,8 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
         {(scorePosition === 'before' || scorePosition === 'after') &&
           renderScorePanel(scorePosBX, teamBY, scorePW, rowH, colors.scoreBBg)}
         {logoPosition === 'left' && renderLogoPlate(0, 0, logoW, sbH)}
+        {logoPosition === 'right' && renderLogoPlate(sbW - logoW, 0, logoW, sbH)}
+        {renderAboveLogo()}
         <Line points={[contentX, rowH + spacing / 2, sbW - spacing, rowH + spacing / 2]}
           stroke={hexToRgba(colors.highlight.color, 0.12)} strokeWidth={1} listening={false} />
 
@@ -790,6 +832,8 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
         {renderModule('yellowCardB', 'yellow-card', sbW + 4, teamBY + rowH / 2 - cardH / 2, cardW, cardH)}
         {renderModule('redCardA', 'red-card', sbW + cardW + 8, teamAY + rowH / 2 - cardH / 2, cardW, cardH)}
         {renderModule('redCardB', 'red-card', sbW + cardW + 8, teamBY + rowH / 2 - cardH / 2, cardW, cardH)}
+        {sport === 'basketball' && renderModule('foulA', 'foul', sbW + 4, teamAY + rowH / 2 - foulH / 2, foulW, foulH)}
+        {sport === 'basketball' && renderModule('foulB', 'foul', sbW + 4, teamBY + rowH / 2 - foulH / 2, foulW, foulH)}
       </>
     );
   };
@@ -804,7 +848,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
       <Layer>
         {/* Main scoreboard group — offset by margin so it's centered in canvas area */}
         <Group x={margin.left} y={margin.top} id="scoreboard-root">
-          <Group skewX={style.skewX || 0}>
+          <Group skewX={styleSkew}>
             {renderFrame()}
             {isLR ? renderLRLayout() : renderTBLayout()}
           </Group>

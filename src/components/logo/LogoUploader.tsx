@@ -3,8 +3,7 @@ import React, { useRef, useState, useCallback } from 'react';
 import { Upload, X, AlertCircle } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { extractPalette, loadImageFromDataUrl } from '../../lib/paletteExtractor';
-import { buildThemeFromPalette } from '../../lib/themeEngine';
-import { checkLogoSize } from '../../lib/projectStorage';
+import { checkLogoSize, compressLogoDataUrl } from '../../lib/projectStorage';
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -18,7 +17,6 @@ const LogoUploader: React.FC = () => {
 
   const setLogo = useEditorStore((s) => s.setLogo);
   const applyPaletteTheme = useEditorStore((s) => s.applyPaletteTheme);
-  const setTemplate = useEditorStore((s) => s.setTemplate);
   const setActiveStep = useEditorStore((s) => s.setActiveStep);
   const logoDataUrl = useEditorStore((s) => s.logoDataUrl);
 
@@ -37,24 +35,24 @@ const LogoUploader: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const sourceDataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await compressLogoDataUrl(sourceDataUrl);
       const sizeCheck = checkLogoSize(dataUrl);
       if (!sizeCheck.ok && sizeCheck.warning) setSizeWarning(sizeCheck.warning);
 
       const imgEl = await loadImageFromDataUrl(dataUrl);
       const palette = await extractPalette(imgEl);
-      const theme = buildThemeFromPalette(palette);
 
       setLogo(dataUrl, palette);
+      // Apply the sport-aware template and logo palette as one theme action.
       applyPaletteTheme(palette);
-      setTemplate(theme.suggestedTemplate);
       setActiveStep(2);
     } catch {
       setError('ไม่สามารถประมวลผลภาพได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsProcessing(false);
     }
-  }, [setLogo, applyPaletteTheme, setTemplate, setActiveStep]);
+  }, [setLogo, applyPaletteTheme, setActiveStep]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();

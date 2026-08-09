@@ -71,12 +71,17 @@ const StyleControls: React.FC = () => {
             label={s.label}
             value={s.unit === ''
               ? Math.round((style[s.key] as number) * 100)
+              : s.key === 'skewX'
+              ? Math.round((style[s.key] as number) * 100)
               : (style[s.key] as number)}
             min={s.unit === '' ? 0 : s.min}
             max={s.unit === '' ? 100 : s.max}
             unit={s.unit === '' ? '%' : s.unit}
             id={`style-slider-${s.key}`}
-            onChange={(v) => setStyleParam(s.key, s.unit === '' ? v / 100 : v)}
+            onChange={(v) => setStyleParam(
+              s.key,
+              s.key === 'skewX' || s.unit === '' ? v / 100 : v
+            )}
           />
         ))}
 

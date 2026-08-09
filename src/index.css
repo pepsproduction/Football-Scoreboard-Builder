@@ -537,6 +537,8 @@ input[type="range"]:focus::-webkit-slider-thumb {
   cursor: pointer;
   transition: transform var(--transition-fast);
   border: 2px solid transparent;
+  padding: 0;
+  min-width: 0;
 }
 
 .palette-swatch:hover {
@@ -545,6 +547,25 @@ input[type="range"]:focus::-webkit-slider-thumb {
 
 .palette-swatch.selected {
   border-color: white;
+}
+
+.palette-badge,
+.sport-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text-muted);
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.palette-theme-button:hover {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  transform: translateY(-1px);
 }
 
 /* Canvas toolbar */

@@ -166,6 +166,13 @@ const LogoControls: React.FC = () => {
         onChange={(v) => setLogoPlateSize(v, logoPlateHeight)}
       />
       <SliderRow
+        label="เธเธเธฒเธ” Plate เธชเธนเธ"
+        value={logoPlateHeight}
+        min={40} max={160} unit="px"
+        id="logo-plate-height"
+        onChange={(v) => setLogoPlateSize(logoPlateWidth, v)}
+      />
+      <SliderRow
         label="Padding"
         value={logoPadding}
         min={0} max={30} unit="px"

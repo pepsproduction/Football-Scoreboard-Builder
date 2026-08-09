@@ -1,5 +1,5 @@
 // src/types/templates.ts
-import type { TemplateId, LayoutType, ScorePosition, LogoPosition, StyleMode, EditorColors, StyleParams, Dimensions } from './editor';
+import type { TemplateId, LayoutType, ScorePosition, LogoPosition, StyleMode, EditorColors, StyleParams, Dimensions, SportType } from './editor';
 
 export interface TemplateConfig {
   id: TemplateId;
@@ -13,6 +13,7 @@ export interface TemplateConfig {
   colors: EditorColors;
   style: StyleParams;
   dimensions: Dimensions;
+  sport?: SportType | 'shared';
   modulesEnabled: {
     time: boolean;
     half: boolean;
@@ -20,5 +21,7 @@ export interface TemplateConfig {
     yellowCardB: boolean;
     redCardA: boolean;
     redCardB: boolean;
+    foulA?: boolean;
+    foulB?: boolean;
   };
 }

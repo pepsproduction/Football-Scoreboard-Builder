@@ -1,6 +1,6 @@
 // src/store/editorStore.ts
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type {
   EditorState,
   EditorColors,
@@ -15,9 +15,13 @@ import type {
   LogoPalette,
   CanvasViewState,
   Dimensions,
+  SportType,
 } from '../types/editor';
 import { useHistoryStore } from './historyStore';
 import { buildThemeFromPalette } from '../lib/themeEngine';
+import { TEMPLATES } from '../templates';
+import { getSportProfile } from '../sports';
+import { createQuotaSafeStorage } from '../lib/projectStorage';
 // ── Default values ────────────────────────────────────────────
 const defaultColor = (color: string, alpha = 1): ColorConfig => ({
   type: 'solid',
@@ -57,7 +61,46 @@ export const defaultModules: EditorModules = {
   yellowCardB: defaultModule(),
   redCardA: defaultModule(),
   redCardB: defaultModule(),
+  foulA: defaultModule(),
+  foulB: defaultModule(),
 };
+
+function cloneColorConfig(config: ColorConfig): ColorConfig {
+  return {
+    ...config,
+    stops: config.stops?.map((stop) => ({ ...stop })),
+  };
+}
+
+function cloneEditorColors(colors: EditorColors): EditorColors {
+  return Object.fromEntries(
+    Object.entries(colors).map(([key, config]) => [key, cloneColorConfig(config)])
+  ) as unknown as EditorColors;
+}
+
+function modulesFromTemplate(
+  template: (typeof TEMPLATES)[TemplateId],
+  sport: SportType | null = 'football'
+): EditorModules {
+  const module = (enabled: boolean, color: ColorConfig) => ({
+    enabled,
+    color: cloneColorConfig(color),
+    size: 1,
+    offsetX: 0,
+    offsetY: 0,
+  });
+
+  return {
+    time: module(template.modulesEnabled.time, template.colors.timeSlot),
+    half: module(template.modulesEnabled.half, template.colors.halfSlot),
+    yellowCardA: module(sport !== 'basketball' && template.modulesEnabled.yellowCardA, template.colors.yellowCard),
+    yellowCardB: module(sport !== 'basketball' && template.modulesEnabled.yellowCardB, template.colors.yellowCard),
+    redCardA: module(sport !== 'basketball' && template.modulesEnabled.redCardA, template.colors.redCard),
+    redCardB: module(sport !== 'basketball' && template.modulesEnabled.redCardB, template.colors.redCard),
+    foulA: module(sport === 'basketball' && (template.modulesEnabled.foulA ?? true), template.colors.highlight),
+    foulB: module(sport === 'basketball' && (template.modulesEnabled.foulB ?? true), template.colors.highlight),
+  };
+}
 
 export const defaultStyle: StyleParams = {
   borderThickness: 3,
@@ -85,10 +128,13 @@ const defaultCanvasView: CanvasViewState = {
   darkBackground: true,
   canvasMargin: { top: 80, right: 120, bottom: 80, left: 120 },
   showModuleIcons: false,  // default OFF
+  snapToGrid: true,
+  snapSize: 4,
 };
 
 
 export const defaultEditorState: EditorState = {
+  sport: null,
   logoDataUrl: null,
   logoPalette: null,
   colors: defaultColors,
@@ -117,6 +163,9 @@ export const defaultEditorState: EditorState = {
 
 // ── Store type ─────────────────────────────────────────────────
 interface EditorStore extends EditorState {
+  // Sport profile
+  setSport: (sport: SportType) => void;
+
   // Logo
   setLogo: (dataUrl: string | null, palette?: LogoPalette | null) => void;
 
@@ -148,6 +197,7 @@ interface EditorStore extends EditorState {
   setModuleColor: (key: keyof EditorModules, config: Partial<ColorConfig>) => void;
   setModuleSize: (key: keyof EditorModules, size: number) => void;
   setModuleOffset: (key: keyof EditorModules, x: number, y: number) => void;
+  resetModulePositions: () => void;
 
   // Style
   setStyleMode: (mode: StyleMode) => void;
@@ -156,12 +206,16 @@ interface EditorStore extends EditorState {
   // Template
   setTemplate: (id: TemplateId) => void;
 
+  // Restore design state without clearing the undo/redo stacks.
+  restoreState: (state: Partial<EditorState>) => void;
+
   // Canvas view (NOT persisted, NOT history)
   setZoom: (zoom: number) => void;
   setShowGrid: (v: boolean) => void;
   setDarkBackground: (v: boolean) => void;
   setCanvasMargin: (margin: Partial<import('../types/editor').CanvasMargin>) => void;
   setShowModuleIcons: (v: boolean) => void;
+  setSnapToGrid: (v: boolean) => void;
 
 
   // Workflow step
@@ -195,6 +249,7 @@ function snapshotState(s: EditorStore): EditorState {
     modules, styleMode, style, activeTemplate,
   } = s;
   return {
+    sport: s.sport,
     logoDataUrl, logoPalette, colors, colorsLinked,
     layoutType, scorePosition, logoPosition, dimensions,
     logoScale, logoRotation, logoSkewX, logoOffsetX, logoOffsetY, 
@@ -211,6 +266,42 @@ export const useEditorStore = create<EditorStore>()(
   persist(
     (set, get) => ({
       ...defaultEditorState,
+
+      setSport: (sport) => {
+        const profile = getSportProfile(sport);
+        withHistory(get, set, () => ({
+          sport,
+          activeTemplate: profile.defaultTemplate,
+          styleMode: profile.styleMode,
+          layoutType: profile.layoutType,
+          scorePosition: profile.scorePosition,
+          logoPosition: profile.logoPosition,
+          colors: cloneEditorColors(profile.colors),
+          colorsLinked: profile.colorsLinked,
+          style: { ...profile.style },
+          dimensions: { ...profile.dimensions },
+          modules: Object.fromEntries(
+            Object.entries(profile.modulesEnabled).map(([key, enabled]) => [
+              key,
+              {
+                enabled,
+                color: cloneColorConfig(
+                  key === 'time' ? profile.colors.timeSlot
+                    : key === 'half' ? profile.colors.halfSlot
+                    : key === 'foulA' || key === 'foulB' ? profile.colors.highlight
+                    : key === 'yellowCardA' || key === 'yellowCardB' ? profile.colors.yellowCard
+                    : key === 'redCardA' || key === 'redCardB' ? profile.colors.redCard
+                    : profile.colors.timeSlot
+                ),
+                size: 1,
+                offsetX: 0,
+                offsetY: 0,
+              },
+            ])
+          ) as unknown as EditorModules,
+          activeStep: 1,
+        }));
+      },
 
       // ── Logo ──────────────────────────────────────────────
       setLogo: (dataUrl, palette) => {
@@ -230,12 +321,42 @@ export const useEditorStore = create<EditorStore>()(
         }));
       },
 
-      setColorsLinked: (linked) => set(() => ({ colorsLinked: linked })),
+      setColorsLinked: (linked) => {
+        withHistory(get, set, (s) => ({
+          colorsLinked: linked,
+          // Linking means the visible A/B values are actually synchronized;
+          // otherwise the UI can claim A=B while the two teams still differ.
+          colors: linked
+            ? {
+                ...s.colors,
+                teamBBg: cloneColorConfig(s.colors.teamABg),
+                scoreBBg: cloneColorConfig(s.colors.scoreABg),
+              }
+            : s.colors,
+        }));
+      },
 
       applyPaletteTheme: (palette, variant = 0) => {
-        withHistory(get, set, (s) => ({
-          colors: buildColorsFromPalette(palette, s.colors, variant),
-        }));
+        withHistory(get, set, (s) => {
+          const theme = buildThemeFromPalette(palette, variant, s.sport ?? 'football');
+          const template = TEMPLATES[theme.suggestedTemplate];
+          return {
+            activeTemplate: theme.suggestedTemplate,
+            styleMode: template.styleMode,
+            layoutType: template.layoutType,
+            scorePosition: template.scorePosition,
+            logoPosition: template.logoPosition,
+            colors: buildColorsFromPalette(palette, s.colors, variant),
+            logoPalette: {
+              ...palette,
+              contrastWarnings: theme.contrastWarnings,
+              contrastScore: theme.contrastScore,
+            },
+            style: { ...template.style },
+            dimensions: { ...template.dimensions },
+            modules: modulesFromTemplate(template, s.sport),
+          };
+        });
       },
 
       resetColors: () => {
@@ -244,7 +365,14 @@ export const useEditorStore = create<EditorStore>()(
 
       // ── Layout ────────────────────────────────────────────
       setLayoutType: (layoutType) => {
-        withHistory(get, set, () => ({ layoutType }));
+        withHistory(get, set, (s) => ({
+          layoutType,
+          // Convert the score position to the equivalent option in the new
+          // layout so the score panels never disappear during a switch.
+          scorePosition: layoutType === 'left-right'
+            ? (s.scorePosition === 'outer' || s.scorePosition === 'after' ? 'outer' : 'inner')
+            : (s.scorePosition === 'outer' || s.scorePosition === 'after' ? 'after' : 'before'),
+        }));
       },
 
       setScorePosition: (scorePosition) => {
@@ -309,11 +437,25 @@ export const useEditorStore = create<EditorStore>()(
       },
 
       setModuleOffset: (key, offsetX, offsetY) => {
-        withHistory(get, set, (s) => ({
+        withHistory(get, set, (s) => {
+          const snap = s.canvasView.snapToGrid ? s.canvasView.snapSize : 1;
+          const snapValue = (value: number) => Math.round(value / snap) * snap;
+          const nextX = snapValue(offsetX);
+          const nextY = snapValue(offsetY);
+          return {
           modules: {
             ...s.modules,
-            [key]: { ...s.modules[key], offsetX, offsetY },
+            [key]: { ...s.modules[key], offsetX: nextX, offsetY: nextY },
           },
+          };
+        });
+      },
+
+      resetModulePositions: () => {
+        withHistory(get, set, (s) => ({
+          modules: Object.fromEntries(
+            Object.entries(s.modules).map(([key, module]) => [key, { ...module, offsetX: 0, offsetY: 0 }])
+          ) as EditorModules,
         }));
       },
 
@@ -330,8 +472,21 @@ export const useEditorStore = create<EditorStore>()(
 
       // ── Template ──────────────────────────────────────────
       setTemplate: (activeTemplate) => {
-        withHistory(get, set, () => ({ activeTemplate }));
+        const template = TEMPLATES[activeTemplate];
+        withHistory(get, set, (s) => ({
+          activeTemplate,
+          styleMode: template.styleMode,
+          layoutType: template.layoutType,
+          scorePosition: template.scorePosition,
+          logoPosition: template.logoPosition,
+          colors: cloneEditorColors(template.colors),
+          style: { ...template.style },
+          dimensions: { ...template.dimensions },
+          modules: modulesFromTemplate(template, s.sport),
+        }));
       },
+
+      restoreState: (state) => set(() => ({ ...state })),
 
       // ── Canvas view (NOT in history, NOT in export) ───────
       setZoom: (zoom) => set(() => ({ canvasView: { ...get().canvasView, zoom } })),
@@ -343,6 +498,9 @@ export const useEditorStore = create<EditorStore>()(
 
       setShowModuleIcons: (showModuleIcons) => set(() => ({
         canvasView: { ...get().canvasView, showModuleIcons },
+      })),
+      setSnapToGrid: (snapToGrid) => set(() => ({
+        canvasView: { ...get().canvasView, snapToGrid },
       })),
 
       // ── Workflow step ─────────────────────────────────────
@@ -361,10 +519,24 @@ export const useEditorStore = create<EditorStore>()(
     }),
     {
       name: 'fsb-project-v1',
+      storage: createJSONStorage(() => createQuotaSafeStorage()),
       // Do not persist canvas view state or active step
       partialize: (state) => {
         const { canvasView: _cv, activeStep: _as, ...rest } = state;
         return rest;
+      },
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<EditorState>;
+        return {
+          ...current,
+          ...stored,
+          // Projects saved before sport selection are treated as football;
+          // brand-new projects keep null and show the first-run picker.
+          sport: persisted
+            ? (Object.prototype.hasOwnProperty.call(stored, 'sport') ? (stored.sport ?? null) : 'football')
+            : current.sport,
+          modules: { ...current.modules, ...(stored.modules ?? {}) },
+        };
       },
     }
   )

@@ -1,103 +1,150 @@
-// src/components/logo/PaletteDisplay.tsx
 import React, { useState } from 'react';
-
+import { CheckCircle2, Info, RotateCcw, Sparkles } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { buildThemeFromPalette } from '../../lib/themeEngine';
 
+const THEME_VARIANTS = [
+  { label: 'แนะนำ', desc: 'เข้ม อ่านง่าย และรักษาสีแบรนด์' },
+  { label: 'สดขึ้น', desc: 'Accent เด่น เหมาะกับงาน Live' },
+  { label: 'โมโนเข้ม', desc: 'เรียบ หรู เน้นโลโก้' },
+  { label: 'สีรอง', desc: 'ดึงสีรองมาเป็นบรรยากาศหลัก' },
+];
+
+const colorValue = (config: { color: string }) => config.color;
+
 const PaletteDisplay: React.FC = () => {
   const palette = useEditorStore((s) => s.logoPalette);
+  const sport = useEditorStore((s) => s.sport);
   const applyPaletteTheme = useEditorStore((s) => s.applyPaletteTheme);
   const resetColors = useEditorStore((s) => s.resetColors);
-  const setTemplate = useEditorStore((s) => s.setTemplate);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   if (!palette) return null;
 
-
+  const recommendedVariant = palette.isDark ? 0 : 2;
+  const recommendedTheme = buildThemeFromPalette(palette, recommendedVariant, sport ?? 'football');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* Palette swatches */}
-      <div style={{ display: 'flex', gap: 4, height: 28 }}>
-        {palette.colors.map((color, i) => (
-          <div
-            key={i}
-            className={`palette-swatch ${hoveredIdx === i ? 'selected' : ''}`}
-            style={{ background: color }}
-            onMouseEnter={() => setHoveredIdx(i)}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Sparkles size={13} style={{ color: '#fbbf24' }} />
+        <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+          วิเคราะห์สีจาก Logo
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--color-text-muted)' }}>
+          {sport === 'basketball' ? 'Basketball tone' : 'Football tone'}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 4, height: 30 }} aria-label="สีที่พบในโลโก้">
+        {palette.colors.map((color, index) => (
+          <button
+            key={`${color}-${index}`}
+            type="button"
+            className={`palette-swatch ${hoveredIdx === index ? 'selected' : ''}`}
+            style={{ background: color, borderColor: hoveredIdx === index ? '#fff' : 'transparent' }}
+            onMouseEnter={() => setHoveredIdx(index)}
             onMouseLeave={() => setHoveredIdx(null)}
+            aria-label={`สี ${color}`}
+            aria-pressed={hoveredIdx === index}
             title={color}
           />
         ))}
       </div>
 
-      {/* Hovered color hex */}
-      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', height: 16 }}>
-        {hoveredIdx !== null ? palette.colors[hoveredIdx] : palette.dominant + ' (dominant)'}
+      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', minHeight: 16 }}>
+        {hoveredIdx !== null ? palette.colors[hoveredIdx] : `${palette.dominant} · สีหลักของโลโก้`}
       </div>
 
-      {/* Palette metadata badges */}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-        {palette.isDark && (
-          <span style={{
-            fontSize: 9, padding: '2px 7px', borderRadius: 10,
-            background: 'rgba(100,100,100,0.2)', border: '1px solid rgba(100,100,100,0.3)',
-            color: 'rgba(200,200,200,0.7)',
-          }}>Dark</span>
-        )}
-        {palette.isVibrant && (
-          <span style={{
-            fontSize: 9, padding: '2px 7px', borderRadius: 10,
-            background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.3)',
-            color: '#a5b4fc',
-          }}>Vibrant</span>
-        )}
-        {palette.isGold && (
-          <span style={{
-            fontSize: 9, padding: '2px 7px', borderRadius: 10,
-            background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)',
-            color: '#fbbf24',
-          }}>Gold</span>
-        )}
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <span className="palette-badge">หลัก {palette.dominant}</span>
+        <span className="palette-badge">รอง {palette.secondary}</span>
+        <span className="palette-badge">Accent {palette.accent}</span>
       </div>
 
-      {/* Theme Variants */}
-      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
-        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 500 }}>
-          สีที่วิเคราะห์จาก LOGO
+      <div
+        style={{
+          padding: 9,
+          border: '1px solid rgba(96,165,250,0.18)',
+          borderRadius: 8,
+          background: 'rgba(59,130,246,0.06)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+          <Info size={12} style={{ color: '#93c5fd' }} />
+          <span style={{ fontSize: 10, color: '#bfdbfe' }}>ตัวอย่างบทบาทสีหลังปรับ Contrast</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: '#86efac', fontWeight: 700 }}>
+            {Math.round(recommendedTheme.contrastScore * 100)}%
+          </span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
           {[
-            { label: 'Premium Dark', desc: 'สุขุม พรีเมียม' },
-            { label: 'Vibrant Neon', desc: 'สีสด เด่นชัด' },
-            { label: 'Deep Mono', desc: 'เข้ม มินิมอล' },
-            { label: 'Alternative', desc: 'เน้นสีรอง' }
-          ].map((v, i) => (
-            <button
-              key={i}
-              className="btn btn-secondary"
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 4px', height: 'auto', gap: 2 }}
-              onClick={() => {
-                if (!palette) return;
-                applyPaletteTheme(palette, i);
-                const theme = buildThemeFromPalette(palette, i);
-                setTemplate(theme.suggestedTemplate);
-              }}
-              id={`btn-apply-theme-${i}`}
-            >
-              <span style={{ fontSize: 10, fontWeight: 600 }}>{v.label}</span>
-              <span style={{ fontSize: 9, color: 'var(--color-text-muted)', fontWeight: 400 }}>{v.desc}</span>
-            </button>
+            ['Team', colorValue(recommendedTheme.colors.teamABg)],
+            ['Score', colorValue(recommendedTheme.colors.scoreABg)],
+            ['Plate', colorValue(recommendedTheme.colors.logoPlateBg)],
+          ].map(([label, color]) => (
+            <div key={label} style={{ borderRadius: 5, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ height: 18, background: color }} />
+              <div style={{ padding: '2px 4px', background: 'rgba(0,0,0,0.25)', fontSize: 9, color: 'var(--color-text-muted)' }}>
+                {label}
+              </div>
+            </div>
           ))}
         </div>
+        {recommendedTheme.contrastWarnings.length > 0 ? (
+          <div style={{ marginTop: 7, fontSize: 9, color: '#fbbf24', lineHeight: 1.45 }}>
+            ปรับพื้นผิวอัตโนมัติเพื่อให้อ่านง่าย: {recommendedTheme.contrastWarnings.join(' · ')}
+          </div>
+        ) : (
+          <div style={{ marginTop: 7, fontSize: 9, color: '#86efac' }}>
+            <CheckCircle2 size={11} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
+            คู่สีหลักผ่านเกณฑ์ Contrast
+          </div>
+        )}
+      </div>
+
+      <div style={{ paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 7, fontWeight: 600 }}>
+          เลือกสไตล์จากสี Logo
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {THEME_VARIANTS.map((variant, index) => {
+            const theme = buildThemeFromPalette(palette, index, sport ?? 'football');
+            const isRecommended = index === recommendedVariant;
+            return (
+              <button
+                key={variant.label}
+                type="button"
+                className="btn btn-secondary palette-theme-button"
+                onClick={() => applyPaletteTheme(palette, index)}
+                id={`btn-apply-theme-${index}`}
+                aria-label={`ใช้ธีม ${variant.label}`}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  padding: '7px 4px',
+                  height: 'auto',
+                  gap: 3,
+                  borderColor: isRecommended ? `${theme.colors.highlight.color}80` : undefined,
+                }}
+              >
+                {isRecommended && <span style={{ position: 'absolute', top: 3, right: 4, fontSize: 8, color: '#86efac' }}>แนะนำ</span>}
+                <span style={{ fontSize: 10, fontWeight: 600 }}>{variant.label}</span>
+                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', fontWeight: 400 }}>{variant.desc}</span>
+              </button>
+            );
+          })}
+        </div>
         <button
+          type="button"
           className="btn btn-ghost"
           onClick={resetColors}
           style={{ fontSize: 11, width: '100%', marginTop: 8 }}
           id="btn-reset-colors-palette"
-          title="รีเซ็ตสีทั้งหมด"
         >
-          รีเซ็ตกลับเป็นสีเริ่มต้น
+          <RotateCcw size={11} /> รีเซ็ตสีกลับค่าเริ่มต้น
         </button>
       </div>
     </div>

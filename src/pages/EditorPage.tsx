@@ -5,9 +5,12 @@ import AppHeader from '../components/layout/AppHeader';
 import WorkflowSidebar from '../components/layout/WorkflowSidebar';
 import CanvasWorkspace from '../components/editor/CanvasWorkspace';
 import PropertiesPanel from '../components/layout/PropertiesPanel';
+import SportPicker from '../components/sports/SportPicker';
+import { useEditorStore } from '../store/editorStore';
 
 const EditorPage: React.FC = () => {
   const stageRef = useRef<Konva.Stage>(null);
+  const sport = useEditorStore((state) => state.sport);
 
   return (
     <div
@@ -35,6 +38,7 @@ const EditorPage: React.FC = () => {
         {/* Right: Properties panel */}
         <PropertiesPanel stageRef={stageRef} />
       </div>
+      <SportPicker open={sport === null} blocking />
     </div>
   );
 };
