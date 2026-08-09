@@ -2,6 +2,7 @@
 // Core type definitions for the Football Scoreboard Builder
 
 export type LayoutType = 'left-right' | 'top-bottom';
+export type SportType = 'football' | 'basketball';
 export type ScorePosition = 'outer' | 'inner' | 'before' | 'after';
 export type LogoPosition = 'center' | 'left' | 'right' | 'above' | 'hidden';
 export type StyleMode = '2d' | '3d';
@@ -67,6 +68,17 @@ export interface LogoPalette {
   isVibrant: boolean;
   isGold: boolean;
   aspectRatio: number;
+  /** Weighted color details used to explain the logo analysis in the UI. */
+  colorDetails?: LogoPaletteColor[];
+  contrastWarnings?: string[];
+  contrastScore?: number;
+}
+
+export interface LogoPaletteColor {
+  hex: string;
+  weight: number;
+  saturation: number;
+  luminance: number;
 }
 
 export interface Dimensions {
@@ -99,6 +111,8 @@ export interface EditorModules {
   yellowCardB: ModuleState;
   redCardA: ModuleState;
   redCardB: ModuleState;
+  foulA: ModuleState;
+  foulB: ModuleState;
 }
 
 export interface StyleParams {
@@ -128,9 +142,14 @@ export interface CanvasViewState {
   darkBackground: boolean;
   canvasMargin: CanvasMargin; // extra space around scoreboard for modules
   showModuleIcons: boolean;   // show clock/arc icons on time/period modules in preview
+  snapToGrid: boolean;
+  snapSize: number;
 }
 
 export interface EditorState {
+  // Sport profile selected before editing starts
+  sport: SportType | null;
+
   // Logo
   logoDataUrl: string | null;
   logoPalette: LogoPalette | null;
@@ -174,7 +193,7 @@ export interface EditorState {
   activeStep: number;
 }
 
-export type ExportMode = 'fit' | 'fullhd';
+export type ExportMode = 'fit' | 'fullhd' | 'hd720';
 export type ExportScale = 1 | 2 | 3;
 
 export interface ExportOptions {

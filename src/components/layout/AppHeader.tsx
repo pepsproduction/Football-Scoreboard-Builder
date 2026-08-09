@@ -7,6 +7,9 @@ import {
 import { useEditorStore } from '../../store/editorStore';
 import { useHistoryStore } from '../../store/historyStore';
 import { exportProjectJSON, importProjectJSON } from '../../lib/projectStorage';
+import { SPORT_PROFILES } from '../../sports';
+import SportPicker from '../sports/SportPicker';
+import ProjectLibraryModal from '../projects/ProjectLibraryModal';
 
 interface AppHeaderProps {
   onImportJSON?: (state: Partial<import('../../types/editor').EditorState>) => void;
@@ -16,10 +19,13 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
   const store = useEditorStore();
   const history = useHistoryStore();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [sportPickerOpen, setSportPickerOpen] = React.useState(false);
+  const [projectLibraryOpen, setProjectLibraryOpen] = React.useState(false);
 
   const handleUndo = () => {
     // snapshot the current state as EditorState (exclude functions)
     const currentSnap = {
+      sport: store.sport,
       logoDataUrl: store.logoDataUrl,
       logoPalette: store.logoPalette,
       colors: store.colors,
@@ -48,12 +54,13 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
     const prev = history.undo(currentSnap);
     if (prev) {
       // Only restore design state, keep current canvasView and activeStep
-      store.loadState({ ...prev, canvasView: store.canvasView, activeStep: store.activeStep });
+      store.restoreState({ ...prev, canvasView: store.canvasView, activeStep: store.activeStep });
     }
   };
 
   const handleRedo = () => {
     const currentSnap = {
+      sport: store.sport,
       logoDataUrl: store.logoDataUrl,
       logoPalette: store.logoPalette,
       colors: store.colors,
@@ -81,7 +88,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
     };
     const next = history.redo(currentSnap);
     if (next) {
-      store.loadState({ ...next, canvasView: store.canvasView, activeStep: store.activeStep });
+      store.restoreState({ ...next, canvasView: store.canvasView, activeStep: store.activeStep });
     }
   };
 
@@ -109,12 +116,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
   };
 
   const handleSave = () => {
-    // Zustand persist handles auto-save; show confirmation
-    const el = document.getElementById('save-indicator');
-    if (el) {
-      el.classList.add('opacity-100');
-      setTimeout(() => el.classList.remove('opacity-100'), 2000);
-    }
+    setProjectLibraryOpen(true);
   };
 
   const handleExportJSON = () => {
@@ -139,6 +141,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
   };
 
   return (
+    <>
     <header
       style={{
         height: 'var(--header-height)',
@@ -162,7 +165,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
         </div>
         <div>
           <div className="text-white font-bold text-sm leading-tight">
-            Football Scoreboard
+            Sports Scoreboard
           </div>
           <div style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>
             BUILDER
@@ -255,6 +258,20 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
         </button>
       </div>
 
+      {/* Sport profile */}
+      {store.sport && (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setSportPickerOpen(true)}
+          id="btn-change-sport"
+          title="เปลี่ยนชนิดกีฬา"
+          style={{ gap: 6, borderColor: `${SPORT_PROFILES[store.sport].accent}50`, color: SPORT_PROFILES[store.sport].accent }}
+        >
+          {store.sport === 'basketball' ? '🏀' : '⚽'} {SPORT_PROFILES[store.sport].name}
+        </button>
+      )}
+
       {/* Reset project */}
       <button
         className="btn btn-ghost btn-icon tooltip-wrapper"
@@ -294,6 +311,9 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onImportJSON }) => {
         v1.0 Local
       </div>
     </header>
+    <ProjectLibraryModal open={projectLibraryOpen} onClose={() => setProjectLibraryOpen(false)} />
+    <SportPicker open={sportPickerOpen} onClose={() => setSportPickerOpen(false)} />
+    </>
   );
 };
 

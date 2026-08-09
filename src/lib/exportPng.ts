@@ -33,8 +33,8 @@ export async function exportScoreboard(
   // Find the scoreboard root group for its actual offset
   const rootGroup = stage.findOne('#scoreboard-root') as Konva.Group | undefined;
   // Use provided margin or fallback to rootGroup position
-  const rootX = marginLeft || (rootGroup ? rootGroup.x() : 0);
-  const rootY = marginTop  || (rootGroup ? rootGroup.y() : 0);
+  const rootX = rootGroup ? rootGroup.x() : marginLeft;
+  const rootY = rootGroup ? rootGroup.y() : marginTop;
   const sbW = scoreboardWidth  ?? (rootGroup ? (rootGroup.width()  || stage.width())  : stage.width());
   const sbH = scoreboardHeight ?? (rootGroup ? (rootGroup.height() || stage.height()) : stage.height());
 
@@ -49,14 +49,16 @@ export async function exportScoreboard(
   let exportStage: Konva.Stage | null = null;
 
   try {
-    let exportWidth = sbW;
-    let exportHeight = sbH;
-    let layerOffsetX = -rootX;
-    let layerOffsetY = -rootY;
+    const presetWidth = mode === 'fullhd' ? 1920 : mode === 'hd720' ? 1280 : undefined;
+    const presetHeight = mode === 'fullhd' ? 1080 : mode === 'hd720' ? 720 : undefined;
+    let exportWidth = presetWidth ?? stage.width();
+    let exportHeight = presetHeight ?? stage.height();
+    let layerOffsetX = 0;
+    let layerOffsetY = 0;
 
-    if (mode === 'fullhd') {
-      exportWidth = 1920;
-      exportHeight = 1080;
+    if (presetWidth && presetHeight) {
+      exportWidth = presetWidth;
+      exportHeight = presetHeight;
       // Center scoreboard in 1920×1080
       layerOffsetX = (exportWidth - sbW) / 2 - rootX;
       layerOffsetY = (exportHeight - sbH) / 2 - rootY;
@@ -90,6 +92,29 @@ export async function exportScoreboard(
     // ── Step 2: Sanitize — remove ALL text nodes ──────────
     sanitizeExportStage(exportStage);
 
+    if (mode === 'fit') {
+      const clonedRoot = exportStage.findOne('#scoreboard-root');
+      const bounds = clonedRoot?.getClientRect({ skipShadow: false }) ?? {
+        x: rootX,
+        y: rootY,
+        width: sbW,
+        height: sbH,
+      };
+      const left = Math.floor(bounds.x);
+      const top = Math.floor(bounds.y);
+      const right = Math.ceil(bounds.x + bounds.width);
+      const bottom = Math.ceil(bounds.y + bounds.height);
+
+      exportWidth = Math.max(1, right - left);
+      exportHeight = Math.max(1, bottom - top);
+      exportStage.width(exportWidth);
+      exportStage.height(exportHeight);
+      exportStage.getLayers().forEach((layer) => {
+        layer.x(layer.x() - left);
+        layer.y(layer.y() - top);
+      });
+    }
+
     // ── Step 3: Export to data URL ────────────────────────
     exportStage.draw();
 
@@ -101,7 +126,7 @@ export async function exportScoreboard(
 
     // ── Step 4: Download ──────────────────────────────────
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const modeSuffix = mode === 'fullhd' ? '1920x1080' : `${sbW}x${sbH}`;
+    const modeSuffix = `${exportWidth}x${exportHeight}`;
     const filename = `scoreboard-${modeSuffix}-${scale}x-${timestamp}.png`;
 
     triggerDownload(dataUrl, filename);

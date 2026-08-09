@@ -3,33 +3,20 @@ import React, { useState } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { TEMPLATE_LIST } from '../../templates/index';
 import type { TemplateId } from '../../types/editor';
-import { TEMPLATES } from '../../templates/index';
 
 const TemplateGallery: React.FC = () => {
   const activeTemplate = useEditorStore((s) => s.activeTemplate);
-  const loadState = useEditorStore((s) => s.loadState);
+  const sport = useEditorStore((s) => s.sport);
+  const setTemplate = useEditorStore((s) => s.setTemplate);
   const [hoveredId, setHoveredId] = useState<TemplateId | null>(null);
 
+  const sportRecommended = sport === 'basketball'
+    ? new Set<TemplateId>(['velocityCore', 'neonStrike', 'ruggedMetal', 'cyberpunkEdge', 'dynamicHex', 'holoInterface'])
+    : new Set<TemplateId>(['arenaLive', 'championsLeague', 'premierModern', 'worldCupClassic', 'competitiveSplit', 'leftLogoClassic']);
+  const orderedTemplates = [...TEMPLATE_LIST].sort((a, b) => Number(sportRecommended.has(b.id)) - Number(sportRecommended.has(a.id)));
+
   const handleSelectTemplate = (id: TemplateId) => {
-    const tpl = TEMPLATES[id];
-    loadState({
-      activeTemplate: id,
-      styleMode: tpl.styleMode,
-      layoutType: tpl.layoutType,
-      scorePosition: tpl.scorePosition,
-      logoPosition: tpl.logoPosition,
-      colors: tpl.colors,
-      style: tpl.style,
-      dimensions: tpl.dimensions,
-      modules: {
-        time: { enabled: tpl.modulesEnabled.time, color: { type: 'solid', color: tpl.colors.timeSlot.color, alpha: 1 }, size: 1, offsetX: 0, offsetY: 0 },
-        half: { enabled: tpl.modulesEnabled.half, color: { type: 'solid', color: tpl.colors.halfSlot.color, alpha: 1 }, size: 1, offsetX: 0, offsetY: 0 },
-        yellowCardA: { enabled: tpl.modulesEnabled.yellowCardA, color: { type: 'solid', color: '#FFCD00', alpha: 1 }, size: 1, offsetX: 0, offsetY: 0 },
-        yellowCardB: { enabled: tpl.modulesEnabled.yellowCardB, color: { type: 'solid', color: '#FFCD00', alpha: 1 }, size: 1, offsetX: 0, offsetY: 0 },
-        redCardA: { enabled: tpl.modulesEnabled.redCardA, color: { type: 'solid', color: '#E8000D', alpha: 1 }, size: 1, offsetX: 0, offsetY: 0 },
-        redCardB: { enabled: tpl.modulesEnabled.redCardB, color: { type: 'solid', color: '#E8000D', alpha: 1 }, size: 1, offsetX: 0, offsetY: 0 },
-      },
-    });
+    setTemplate(id);
   };
 
   // Tags helper
@@ -64,6 +51,7 @@ const TemplateGallery: React.FC = () => {
         gap: 6,
       }}>
         <span style={{ color: '#60a5fa', fontWeight: 600 }}>{TEMPLATE_LIST.length}</span> templates
+        <span style={{ color: 'var(--color-text-muted)' }}>· {sport === 'basketball' ? 'Basketball' : 'Football'} preset first</span>
         <span style={{ marginLeft: 'auto', color: '#86efac', fontSize: 9 }}>
           {TEMPLATE_LIST.filter(t => !originalIds.has(t.id)).length} ใหม่
         </span>
@@ -77,7 +65,7 @@ const TemplateGallery: React.FC = () => {
           gap: 6,
         }}
       >
-        {TEMPLATE_LIST.map((tpl) => {
+        {orderedTemplates.map((tpl) => {
           const isActive = activeTemplate === tpl.id;
           const isHovered = hoveredId === tpl.id;
           const isNew = !originalIds.has(tpl.id);
@@ -85,6 +73,7 @@ const TemplateGallery: React.FC = () => {
           const teamColor = tpl.colors.teamABg.color;
           const teamColorB = tpl.colors.teamBBg.color;
           const tags = getTags(tpl);
+          if (sportRecommended.has(tpl.id)) tags.unshift({ label: 'MATCH', color: '#86efac', bg: 'rgba(34,197,94,0.15)' });
           const skew = tpl.style.skewX !== 0 ? `skewX(${tpl.style.skewX * 30}deg)` : 'none';
 
           return (

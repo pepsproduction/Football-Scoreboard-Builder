@@ -91,6 +91,7 @@ const ExportControls: React.FC<ExportControlsProps> = ({ stageRef }) => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {[
             { value: 'fit', label: 'Fit to Scoreboard', desc: 'ขนาดพอดีกับกรอบ ตัดพื้นที่ว่างออก' },
+            { value: 'hd720', label: 'OBS HD 1280×720', desc: 'เหมาะกับ Scene ขนาด HD สำหรับ OBS' },
             { value: 'fullhd', label: 'Full HD Canvas', desc: '1920×1080 Scoreboard อยู่ตรงกลาง' },
           ].map((m) => (
             <button
