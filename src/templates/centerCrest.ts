@@ -40,7 +40,7 @@ export const centerCrest: TemplateConfig = {
     shadowStrength: 0.8,
     glowStrength: 0.45,
     highlightStrength: 1,
-    frameDepth: 0,
+    frameDepth: 5,
     skewX: 0,
     techBorders: false,
     patternStyle: 'none',

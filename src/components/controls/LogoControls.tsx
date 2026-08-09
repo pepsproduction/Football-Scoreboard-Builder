@@ -4,6 +4,7 @@ import { Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import type { LogoPosition } from '../../types/editor';
 import { SliderRow } from './LayoutControls';
+import { MAX_SAFE_SKEW } from '../../lib/visualSafety';
 
 const LOGO_POSITIONS: { value: LogoPosition; label: string; emoji: string }[] = [
   { value: 'center', label: 'กลาง', emoji: '⊙' },
@@ -34,6 +35,7 @@ const LogoControls: React.FC = () => {
   const setLogoPadding = useEditorStore((s) => s.setLogoPadding);
   const showLogoPlate = useEditorStore((s) => s.showLogoPlate);
   const setShowLogoPlate = useEditorStore((s) => s.setShowLogoPlate);
+  const skewLimit = Math.round(MAX_SAFE_SKEW * 100);
 
   const handleResetLogoControls = () => {
     setLogoScale(1);
@@ -113,8 +115,8 @@ const LogoControls: React.FC = () => {
       />
       <SliderRow
         label="ความเอียง Logo (Skew)"
-        value={Math.round(logoSkewX * 100)}
-        min={-50} max={50} unit="%"
+        value={Math.max(-skewLimit, Math.min(skewLimit, Math.round(logoSkewX * 100)))}
+        min={-skewLimit} max={skewLimit} unit="%"
         id="logo-skewx-slider"
         onChange={(v) => setLogoSkewX(v / 100)}
       />

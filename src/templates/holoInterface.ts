@@ -33,7 +33,7 @@ const holoInterface: TemplateConfig = {
     highlightStrength: 0.4,
     glowStrength: 1.0,
     frameDepth: 2,
-    skewX: 0.05,
+    skewX: 0.02,
     techBorders: true,
     patternStyle: 'grid',
     moduleShape: 'parallelogram',

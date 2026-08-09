@@ -28,11 +28,11 @@ export const esportsNeon: TemplateConfig = {
   style: {
     cornerRadius: 4,
     borderThickness: 2,
-    bevelDepth: 0,
+    bevelDepth: 3,
     shadowStrength: 0.9,
     highlightStrength: 1.0,
     glowStrength: 1.0,
-    frameDepth: 0,
+    frameDepth: 3,
     skewX: 0,
     techBorders: false,
     patternStyle: 'none',

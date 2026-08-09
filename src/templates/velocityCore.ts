@@ -33,7 +33,7 @@ const velocityCore: TemplateConfig = {
     highlightStrength: 0.9,
     glowStrength: 0.4,
     frameDepth: 8,
-    skewX: 0.35,
+    skewX: 0.06,
     techBorders: true,
     patternStyle: 'none',
     moduleShape: 'parallelogram',

@@ -11,6 +11,7 @@ import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useEditorStore } from '../../store/editorStore';
 import type { ColorConfig, EditorModules, CanvasMargin } from '../../types/editor';
+import { safeSkew } from '../../lib/visualSafety';
 
 // ── Color helpers ─────────────────────────────────────────────
 
@@ -71,6 +72,9 @@ function dropShadow(strength: number) {
   };
 }
 
+// Konva's skew values are shear coefficients, not degrees. Keep the editor's
+// percentage-like values deliberately subtle so a template can never tilt the
+// whole scoreboard off its baseline.
 // ── Module icon shapes ────────────────────────────────────────
 
 interface ModuleIconProps {
@@ -205,13 +209,34 @@ const DraggableModule: React.FC<DraggableModuleProps> = ({
         // Time/Half: background box
         <>
           {shape === 'pill' ? (
-            <Rect x={0} y={0} width={mw} height={mh} cornerRadius={mh / 2} fill={fillColor} stroke={hexToRgba(highlightColor, 0.35)} strokeWidth={1.5} />
+            <Rect x={0} y={0} width={mw} height={mh} cornerRadius={mh / 2} fill={fillColor} stroke={hexToRgba(highlightColor, 0.45)} strokeWidth={1.5}
+              shadowColor="rgba(0,0,0,0.65)" shadowBlur={5} shadowOffset={{ x: 1, y: 2 }} shadowOpacity={0.7} />
           ) : shape === 'hexagon' ? (
-            <RegularPolygon x={mw / 2} y={mh / 2} sides={6} radius={mh / 2} fill={fillColor} stroke={hexToRgba(highlightColor, 0.35)} strokeWidth={1.5} />
+            <RegularPolygon x={mw / 2} y={mh / 2} sides={6} radius={mh / 2} fill={fillColor} stroke={hexToRgba(highlightColor, 0.45)} strokeWidth={1.5}
+              shadowColor="rgba(0,0,0,0.65)" shadowBlur={5} shadowOffset={{ x: 1, y: 2 }} shadowOpacity={0.7} />
           ) : shape === 'parallelogram' ? (
-            <Rect x={0} y={0} width={mw} height={mh} cornerRadius={2} skewX={-0.3} fill={fillColor} stroke={hexToRgba(highlightColor, 0.35)} strokeWidth={1.5} />
+            <Rect
+              x={0} y={0} width={mw} height={mh} cornerRadius={2}
+              skewX={-0.06}
+              fill={fillColor}
+              stroke={hexToRgba(highlightColor, 0.45)}
+              strokeWidth={1.5}
+              shadowColor="rgba(0,0,0,0.65)"
+              shadowBlur={5}
+              shadowOffset={{ x: 1, y: 2 }}
+              shadowOpacity={0.7}
+            />
           ) : (
-            <Rect x={0} y={0} width={mw} height={mh} cornerRadius={4} fill={fillColor} stroke={hexToRgba(highlightColor, 0.35)} strokeWidth={1.5} />
+            <Rect
+              x={0} y={0} width={mw} height={mh} cornerRadius={4}
+              fill={fillColor}
+              stroke={hexToRgba(highlightColor, 0.45)}
+              strokeWidth={1.5}
+              shadowColor="rgba(0,0,0,0.65)"
+              shadowBlur={5}
+              shadowOffset={{ x: 1, y: 2 }}
+              shadowOpacity={0.7}
+            />
           )}
           {/* Icon (preview only — stripped on export) */}
           {showIcons && (
@@ -413,8 +438,19 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
   const cornerR = style.cornerRadius;
   const borderT = style.borderThickness;
   const frameDepth = is3D ? Math.max(0, style.frameDepth || 0) : 0;
-  const styleSkew = Math.max(-0.5, Math.min(0.5, style.skewX || 0)) * 30;
-  const logoSkew = Math.max(-0.5, Math.min(0.5, logoSkewX || 0)) * 30;
+  const styleSkew = safeSkew(style.skewX);
+  const logoSkew = safeSkew(logoSkewX);
+
+  // 2D templates still receive a restrained broadcast-style edge treatment.
+  // They remain clean, but no longer fall back to a single flat rectangle.
+  const surfaceHighlight = Math.max(0.28, is3D ? highlight : (style.highlightStrength || 0.35));
+  const surfaceShadow = Math.min(0.9, Math.max(0.3, shadowStr));
+  const surfaceDepth = Math.min(
+    10,
+    Math.max(1.5, is3D
+      ? bevel * 0.45 + frameDepth * 0.35
+      : borderT * 0.6 + 1.5)
+  );
 
   const sbW = dimensions.width;
   const sbH = dimensions.height;
@@ -434,8 +470,11 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
   const isLR = layoutType === 'left-right';
   const plateSizeW = showLogoPlate ? logoPlateWidth + logoPadding * 2 : logoPlateWidth;
   let centerW = logoPosition === 'center' ? plateSizeW : 0;
-  const sideWidth = isLR ? Math.floor((sbW - centerW - spacing * 2) / 2) : sbW;
-  const scorePanelW = isLR ? Math.min(70, sideWidth * 0.35) : 48;
+  const lrContentStart = logoPosition === 'left' ? plateSizeW + spacing : spacing;
+  const lrContentEnd = logoPosition === 'right' ? sbW - plateSizeW - spacing : sbW - spacing;
+  const lrContentWidth = Math.max(0, lrContentEnd - lrContentStart);
+  const sideWidth = isLR ? Math.floor((lrContentWidth - centerW - spacing * 2) / 2) : sbW;
+  const scorePanelW = isLR ? Math.max(0, Math.min(70, Math.max(0, sideWidth) * 0.35)) : 48;
 
   // ── Gradient fill ─────────────────────────────────────────
   function gradientFill(cfg: ColorConfig, w: number, h: number, dir: 'h' | 'v' = 'v') {
@@ -470,66 +509,193 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
   }
 
   // ── Frame ─────────────────────────────────────────────────
-  const renderFrame = () => (
-    <>
-      {glow > 0 && (
-        <Rect x={-bevel * 0.5} y={-bevel * 0.5}
-          width={sbW + bevel} height={sbH + bevel}
-          cornerRadius={cornerR + 2} fill="transparent"
-          {...glowProps(colors.glow.color, colors.glow.alpha, glow)} />
-      )}
-      <Rect x={0} y={0} width={sbW} height={sbH}
-        cornerRadius={cornerR}
-        {...gradientFill(colors.framePrimary, sbW, sbH, 'v')}
-        {...dropShadow(shadowStr)} />
-      {is3D && (
-        <Rect x={borderT} y={borderT}
-          width={sbW - borderT * 2} height={sbH - borderT * 2}
-          cornerRadius={Math.max(0, cornerR - 2)}
+  const renderFrame = () => {
+    const bevelBand = Math.min(10, Math.max(2, surfaceDepth * 0.7));
+    const frameInset = Math.min(12, Math.max(2, surfaceDepth * 0.85));
+    const innerW = Math.max(1, sbW - frameInset * 2);
+    const innerH = Math.max(1, sbH - frameInset * 2);
+    const shadowColor = hexToRgba(colors.shadow.color, Math.min(0.84, colors.shadow.alpha * 0.75));
+    const innerColor = hexToRgba(colors.frameInner.color, Math.min(0.86, colors.frameInner.alpha * 0.85));
+    const highlightColor = hexToRgba(colors.highlight.color, Math.min(0.72, surfaceHighlight * 0.58));
+    const accentAlpha = Math.min(0.48, Math.max(0.16, surfaceHighlight * 0.32));
+    const accentW = Math.min(44, Math.max(18, sbW * 0.045));
+    const accentH = Math.min(9, Math.max(4, sbH * 0.12));
+    const accentY = Math.max(2, frameInset * 0.65);
+
+    return (
+      <>
+        {glow > 0 && (
+          <Rect x={-bevel * 0.5} y={-bevel * 0.5}
+            width={sbW + bevel} height={sbH + bevel}
+            cornerRadius={cornerR + 2} fill="transparent"
+            {...glowProps(colors.glow.color, colors.glow.alpha, glow)} />
+        )}
+
+        {/* Offset base creates the dark metal/plastic thickness visible at the bottom edge. */}
+        <Rect x={surfaceDepth * 0.45} y={surfaceDepth * 0.65}
+          width={sbW} height={sbH} cornerRadius={cornerR}
+          fill={shadowColor} listening={false} />
+        <Rect x={0} y={0} width={sbW} height={sbH}
+          cornerRadius={cornerR}
+          {...gradientFill(colors.framePrimary, sbW, sbH, 'v')}
+          {...dropShadow(surfaceShadow)} />
+
+        {/* Inner rim, top light and bottom shade keep even 2D presets from looking flat. */}
+        <Rect x={frameInset} y={frameInset}
+          width={innerW} height={innerH}
+          cornerRadius={Math.max(0, cornerR - frameInset * 0.45)}
           fill="transparent"
-          stroke={hexToRgba(colors.frameInner.color, colors.frameInner.alpha)}
-          strokeWidth={1} />
-      )}
-      {frameDepth > 0 && (
-        <Rect
-          x={frameDepth}
-          y={frameDepth}
-          width={Math.max(1, sbW - frameDepth * 2)}
-          height={Math.max(1, sbH - frameDepth * 2)}
-          cornerRadius={Math.max(0, cornerR - frameDepth * 0.25)}
-          fill="transparent"
-          stroke={hexToRgba(colors.frameInner.color, Math.min(0.8, 0.25 + frameDepth / 40))}
-          strokeWidth={Math.max(1, Math.min(3, frameDepth / 5))}
+          stroke={innerColor}
+          strokeWidth={Math.max(1, Math.min(3, surfaceDepth * 0.28))}
+          listening={false} />
+        <Line
+          points={[Math.max(cornerR, frameInset + 2), frameInset + 1, Math.max(frameInset + 3, sbW - Math.max(cornerR, frameInset + 2)), frameInset + 1]}
+          stroke={highlightColor}
+          strokeWidth={Math.max(1, Math.min(2.5, surfaceDepth * 0.22))}
+          lineCap="round"
           listening={false}
         />
-      )}
-      {bevel > 0 && (
-        <Rect x={0} y={0} width={sbW} height={bevel * 0.5}
-          cornerRadius={[cornerR, cornerR, 0, 0]}
-          fillLinearGradientStartPoint={{ x: sbW / 2, y: 0 }}
-          fillLinearGradientEndPoint={{ x: sbW / 2, y: bevel * 0.5 }}
-          fillLinearGradientColorStops={[0, hexToRgba(colors.highlight.color, highlight * 0.7), 1, 'rgba(0,0,0,0)']}
-          listening={false} />
-      )}
-      <Rect x={0} y={0} width={sbW} height={sbH}
-        cornerRadius={cornerR} fill="transparent"
-        stroke={hexToRgba(colors.highlight.color, is3D ? highlight * 0.6 : 0.3)}
-        strokeWidth={borderT} listening={false} />
-      
-      {style.techBorders && (
-        <Rect x={borderT + 4} y={borderT + 4} width={sbW - borderT * 2 - 8} height={sbH - borderT * 2 - 8}
-          cornerRadius={Math.max(0, cornerR - 4)} fill="transparent"
-          stroke={hexToRgba(colors.highlight.color, 0.6)} strokeWidth={1}
-          dash={[8, 8]} listening={false} />
-      )}
-    </>
-  );
+        <Line
+          points={[Math.max(cornerR, frameInset + 2), sbH - frameInset - 1, Math.max(frameInset + 3, sbW - Math.max(cornerR, frameInset + 2)), sbH - frameInset - 1]}
+          stroke={shadowColor}
+          strokeWidth={Math.max(1, Math.min(3, surfaceDepth * 0.3))}
+          lineCap="round"
+          listening={false}
+        />
 
-  const renderScorePanel = (x: number, y: number, w: number, h: number, cfg: ColorConfig) => (
-    <Rect x={x} y={y} width={w} height={h} cornerRadius={2}
-      {...gradientFill(cfg, w, h, 'v')}
-      shadowColor="rgba(0,0,0,0.5)" shadowBlur={4} shadowOffset={{ x: 0, y: 1 }} />
-  );
+        {bevelBand > 0 && (
+          <>
+            <Rect x={0} y={0} width={sbW} height={bevelBand}
+              cornerRadius={[cornerR, cornerR, 0, 0]}
+              fillLinearGradientStartPoint={{ x: sbW / 2, y: 0 }}
+              fillLinearGradientEndPoint={{ x: sbW / 2, y: bevelBand }}
+              fillLinearGradientColorStops={[0, hexToRgba(colors.highlight.color, surfaceHighlight * 0.68), 0.42, hexToRgba(colors.highlight.color, surfaceHighlight * 0.2), 1, 'rgba(0,0,0,0)']}
+              listening={false} />
+            <Rect x={0} y={sbH - bevelBand} width={sbW} height={bevelBand}
+              cornerRadius={[0, 0, cornerR, cornerR]}
+              fillLinearGradientStartPoint={{ x: sbW / 2, y: sbH - bevelBand }}
+              fillLinearGradientEndPoint={{ x: sbW / 2, y: sbH }}
+              fillLinearGradientColorStops={[0, 'rgba(0,0,0,0)', 1, shadowColor]}
+              listening={false} />
+          </>
+        )}
+
+        <Rect x={0} y={0} width={sbW} height={sbH}
+          cornerRadius={cornerR} fill="transparent"
+          stroke={hexToRgba(colors.highlight.color, Math.min(0.7, surfaceHighlight * 0.62))}
+          strokeWidth={Math.max(1, borderT)} listening={false} />
+
+        {/* Small symmetric chevrons borrow the broadcast-graphic language without tilting the scoreboard. */}
+        <Group
+          x={sbW / 2}
+          y={sbH / 2}
+          offsetX={sbW / 2}
+          offsetY={sbH / 2}
+          skewX={styleSkew}
+          listening={false}
+        >
+          <Line
+            points={[borderT + 6, accentY, borderT + accentW, accentY, borderT + accentW - accentH, accentY + accentH, borderT + 12, accentY + accentH]}
+            closed
+            fill={hexToRgba(colors.highlight.color, accentAlpha)}
+            stroke={hexToRgba(colors.highlight.color, accentAlpha * 0.8)}
+            strokeWidth={0.6}
+          />
+          <Line
+            points={[sbW - borderT - 6, accentY, sbW - borderT - accentW, accentY, sbW - borderT - accentW + accentH, accentY + accentH, sbW - borderT - 12, accentY + accentH]}
+            closed
+            fill={hexToRgba(colors.highlight.color, accentAlpha)}
+            stroke={hexToRgba(colors.highlight.color, accentAlpha * 0.8)}
+            strokeWidth={0.6}
+          />
+        </Group>
+
+        {style.techBorders && (
+          <Rect x={borderT + 4} y={borderT + 4} width={Math.max(1, sbW - borderT * 2 - 8)} height={Math.max(1, sbH - borderT * 2 - 8)}
+            cornerRadius={Math.max(0, cornerR - 4)} fill="transparent"
+            stroke={hexToRgba(colors.highlight.color, 0.6)} strokeWidth={1}
+            dash={[8, 8]} listening={false} />
+        )}
+      </>
+    );
+  };
+
+  const renderTeamPanel = (
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    cfg: ColorConfig,
+    radius: number | [number, number, number, number],
+  ) => {
+    const safeW = Math.max(1, w);
+    const safeH = Math.max(1, h);
+    const inset = Math.min(surfaceDepth * 0.55, Math.max(1, Math.min(safeW, safeH) * 0.18));
+    const innerW = Math.max(1, safeW - inset * 2);
+    const innerH = Math.max(1, safeH - inset * 2);
+    const lineStart = Math.min(safeW * 0.4, Math.max(2, cornerR + inset));
+    const lineEnd = Math.max(lineStart + 1, safeW - lineStart);
+    const shadowColor = hexToRgba(colors.shadow.color, Math.min(0.76, colors.shadow.alpha * 0.62));
+    const edgeColor = hexToRgba(colors.frameInner.color, Math.min(0.76, colors.frameInner.alpha * 0.72));
+
+    return (
+      <>
+        <Rect x={x + surfaceDepth * 0.35} y={y + surfaceDepth * 0.5}
+          width={safeW} height={safeH} cornerRadius={radius}
+          fill={shadowColor} listening={false} />
+        <Rect x={x} y={y} width={safeW} height={safeH}
+          cornerRadius={radius}
+          {...gradientFill(cfg, safeW, safeH, 'h')}
+          {...dropShadow(surfaceShadow * 0.62)} />
+        {patternImg && <Rect x={x} y={y} width={safeW} height={safeH}
+          cornerRadius={radius} fillPatternImage={patternImg as any} listening={false} />}
+        <Rect x={x + inset} y={y + inset} width={innerW} height={innerH}
+          cornerRadius={Math.max(0, cornerR - inset)} fill="transparent"
+          stroke={edgeColor} strokeWidth={Math.max(1, Math.min(2, surfaceDepth * 0.22))}
+          listening={false} />
+        <Line points={[x + lineStart, y + inset + 1, x + lineEnd, y + inset + 1]}
+          stroke={hexToRgba(colors.highlight.color, Math.min(0.58, surfaceHighlight * 0.48))}
+          strokeWidth={Math.max(1, Math.min(2, surfaceDepth * 0.18))}
+          lineCap="round" listening={false} />
+        <Line points={[x + lineStart, y + safeH - inset - 1, x + lineEnd, y + safeH - inset - 1]}
+          stroke={shadowColor}
+          strokeWidth={Math.max(1, Math.min(2.5, surfaceDepth * 0.24))}
+          lineCap="round" listening={false} />
+        {safeW > 160 && (
+          <Line points={[x + safeW * 0.72, y + inset + 1, x + safeW * 0.82, y + inset + 1, x + safeW * 0.74, y + safeH - inset - 1]}
+            stroke={hexToRgba(colors.highlight.color, Math.min(0.22, surfaceHighlight * 0.18))}
+            strokeWidth={1.2} listening={false} />
+        )}
+      </>
+    );
+  };
+
+  const renderScorePanel = (x: number, y: number, w: number, h: number, cfg: ColorConfig) => {
+    const safeW = Math.max(1, w);
+    const safeH = Math.max(1, h);
+    const radius = Math.min(6, Math.max(2, cornerR * 0.35 + 1));
+    const inset = Math.min(4, Math.max(1, surfaceDepth * 0.42));
+    const panelShadow = hexToRgba(colors.shadow.color, Math.min(0.82, colors.shadow.alpha * 0.7));
+    return (
+      <>
+        <Rect x={x + surfaceDepth * 0.3} y={y + surfaceDepth * 0.55}
+          width={safeW} height={safeH} cornerRadius={radius}
+          fill={panelShadow} listening={false} />
+        <Rect x={x} y={y} width={safeW} height={safeH} cornerRadius={radius}
+          {...gradientFill(cfg, safeW, safeH, 'v')}
+          {...dropShadow(surfaceShadow * 0.7)} />
+        <Rect x={x + inset} y={y + inset}
+          width={Math.max(1, safeW - inset * 2)} height={Math.max(1, safeH - inset * 2)}
+          cornerRadius={Math.max(1, radius - inset * 0.4)} fill="transparent"
+          stroke={hexToRgba(colors.highlight.color, Math.min(0.62, surfaceHighlight * 0.5))}
+          strokeWidth={Math.max(1, Math.min(2, surfaceDepth * 0.2))}
+          listening={false} />
+        <Line points={[x + inset + 2, y + safeH - inset - 1, x + safeW - inset - 2, y + safeH - inset - 1]}
+          stroke={panelShadow} strokeWidth={Math.max(1, Math.min(2, surfaceDepth * 0.24))}
+          lineCap="round" listening={false} />
+      </>
+    );
+  };
 
   const renderLogoPlate = (x: number, y: number, w: number, h: number) => {
     const cr = logoPosition === 'left'
@@ -558,42 +724,48 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     const cx = x + w / 2;
     const cy = y + h / 2;
 
-    const renderPlateShape = () => {
-      const fillProps = gradientFill(colors.logoPlateBg, w, h, 'v');
-      const strokeProps = { stroke: hexToRgba(colors.highlight.color, highlight * 0.3), strokeWidth: 1 };
+    const plateDepth = Math.min(8, Math.max(2, surfaceDepth * 0.85));
+    const renderPlateShape = (px: number, py: number, depthLayer = false) => {
+      const fillProps = depthLayer
+        ? { fill: hexToRgba(colors.shadow.color, Math.min(0.82, colors.shadow.alpha * 0.86)) }
+        : gradientFill(colors.logoPlateBg, w, h, 'v');
+      const strokeProps = depthLayer
+        ? { stroke: hexToRgba(colors.shadow.color, Math.min(0.9, colors.shadow.alpha)), strokeWidth: Math.max(1, borderT * 0.7) }
+        : { stroke: hexToRgba(colors.highlight.color, Math.min(0.7, surfaceHighlight * 0.58)), strokeWidth: Math.max(1, borderT * 0.55) };
       
       switch (logoPlateShape) {
         case 'circle':
-          return <Circle x={cx} y={cy} radius={Math.min(w, h) / 2} {...fillProps} {...strokeProps} />;
+          return <Circle x={px + w / 2} y={py + h / 2} radius={Math.min(w, h) / 2} {...fillProps} {...strokeProps} />;
         case 'hexagon': {
           const pts = [
-            x + w * 0.25, y,
-            x + w * 0.75, y,
-            x + w, y + h / 2,
-            x + w * 0.75, y + h,
-            x + w * 0.25, y + h,
-            x, y + h / 2
+            px + w * 0.25, py,
+            px + w * 0.75, py,
+            px + w, py + h / 2,
+            px + w * 0.75, py + h,
+            px + w * 0.25, py + h,
+            px, py + h / 2
           ];
           return <Line points={pts} closed {...fillProps} {...strokeProps} />;
         }
         case 'trapezoid': {
           const pts = [
-            x, y,
-            x + w, y,
-            x + w * 0.8, y + h,
-            x + w * 0.2, y + h
+            px, py,
+            px + w, py,
+            px + w * 0.8, py + h,
+            px + w * 0.2, py + h
           ];
           return <Line points={pts} closed {...fillProps} {...strokeProps} />;
         }
         case 'rect':
         default:
-          return <Rect x={x} y={y} width={w} height={h} cornerRadius={cr} {...fillProps} {...strokeProps} />;
+          return <Rect x={px} y={py} width={w} height={h} cornerRadius={cr} {...fillProps} {...strokeProps} />;
       }
     };
 
     return (
       <>
-        {showLogoPlate && renderPlateShape()}
+        {showLogoPlate && renderPlateShape(x + plateDepth * 0.55, y + plateDepth, true)}
+        {showLogoPlate && renderPlateShape(x, y)}
         {logoImg && (
           <KImage 
             id="logo-image" 
@@ -605,7 +777,7 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
             width={lw} 
             height={lh} 
             rotation={logoRotation}
-            skewX={logoSkew - styleSkew}
+            skewX={logoSkew}
           />
         )}
         {!logoImg && (
@@ -702,30 +874,33 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
   // ── LR Layout ─────────────────────────────────────────────
   const renderLRLayout = () => {
     const totalCenter = centerW;
-    const leftStart = spacing;
-    const centerStart = Math.floor((sbW - totalCenter) / 2);
-    const rightEnd = sbW - spacing;
+    const leftStart = lrContentStart;
+    const centerStart = Math.floor(leftStart + (lrContentWidth - totalCenter) / 2);
+    const rightEnd = lrContentEnd;
     const rightStart = centerStart + totalCenter;
 
-    let leftTeamX = leftStart, leftTeamW = sideWidth;
-    let rightTeamX = rightStart + spacing, rightTeamW = sideWidth;
+    // `before`/`after` are vertical-layout terms. Treat them as the outer
+    // horizontal arrangement so imported/legacy templates never lose scores.
+    const horizontalScorePosition = scorePosition === 'inner' ? 'inner' : 'outer';
+    let leftTeamX = leftStart, leftTeamW = Math.max(0, sideWidth);
+    let rightTeamX = rightStart + spacing, rightTeamW = Math.max(0, sideWidth);
     let leftScoreX = 0, leftScoreW = 0;
     let rightScoreX = 0, rightScoreW = 0;
 
-    if (scorePosition === 'inner') {
-      leftScoreW = scorePanelW; rightScoreW = scorePanelW;
+    if (horizontalScorePosition === 'inner') {
+      leftScoreW = Math.max(0, scorePanelW); rightScoreW = Math.max(0, scorePanelW);
       leftScoreX = centerStart - leftScoreW - spacing;
       rightScoreX = rightStart + spacing;
-      leftTeamW = leftScoreX - leftStart - spacing;
+      leftTeamW = Math.max(0, leftScoreX - leftStart - spacing);
       rightTeamX = rightScoreX + rightScoreW + spacing;
-      rightTeamW = rightEnd - rightTeamX;
-    } else if (scorePosition === 'outer') {
-      leftScoreW = scorePanelW; rightScoreW = scorePanelW;
+      rightTeamW = Math.max(0, rightEnd - rightTeamX);
+    } else {
+      leftScoreW = Math.max(0, scorePanelW); rightScoreW = Math.max(0, scorePanelW);
       leftScoreX = leftStart;
       leftTeamX = leftScoreX + leftScoreW + spacing;
-      leftTeamW = centerStart - leftTeamX - spacing;
+      leftTeamW = Math.max(0, centerStart - leftTeamX - spacing);
       rightTeamX = rightStart + spacing;
-      rightTeamW = rightEnd - rightTeamX - rightScoreW - spacing;
+      rightTeamW = Math.max(0, rightEnd - rightTeamX - rightScoreW - spacing);
       rightScoreX = rightTeamX + rightTeamW + spacing;
     }
 
@@ -738,20 +913,14 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
 
     return (
       <>
-        <Rect x={leftTeamX} y={teamY} width={Math.max(0, leftTeamW)} height={teamH}
-          cornerRadius={[cornerR, 0, 0, cornerR]}
-          {...gradientFill(colors.teamABg, leftTeamW, teamH, 'h')} />
-        {patternImg && <Rect x={leftTeamX} y={teamY} width={Math.max(0, leftTeamW)} height={teamH} cornerRadius={[cornerR, 0, 0, cornerR]} fillPatternImage={patternImg as any} listening={false} />}
+        {renderTeamPanel(leftTeamX, teamY, leftTeamW, teamH, colors.teamABg, [cornerR, 0, 0, cornerR])}
         
-        {(scorePosition === 'inner' || scorePosition === 'outer') && leftScoreW > 0 &&
+        {leftScoreW > 0 &&
           renderScorePanel(leftScoreX, teamY, leftScoreW, teamH, colors.scoreABg)}
         
-        <Rect x={rightTeamX} y={teamY} width={Math.max(0, rightTeamW)} height={teamH}
-          cornerRadius={[0, cornerR, cornerR, 0]}
-          {...gradientFill(colors.teamBBg, rightTeamW, teamH, 'h')} />
-        {patternImg && <Rect x={rightTeamX} y={teamY} width={Math.max(0, rightTeamW)} height={teamH} cornerRadius={[0, cornerR, cornerR, 0]} fillPatternImage={patternImg as any} listening={false} />}
+        {renderTeamPanel(rightTeamX, teamY, rightTeamW, teamH, colors.teamBBg, [0, cornerR, cornerR, 0])}
         
-        {(scorePosition === 'inner' || scorePosition === 'outer') && rightScoreW > 0 &&
+        {rightScoreW > 0 &&
           renderScorePanel(rightScoreX, teamY, rightScoreW, teamH, colors.scoreBBg)}
 
         {logoPosition === 'center' && totalCenter > 0 && renderLogoPlate(centerStart, 0, totalCenter, sbH)}
@@ -807,15 +976,23 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
     const foulW = 54, foulH = 26;
     return (
       <>
-        <Rect x={teamAX} y={teamAY} width={Math.max(0, teamAW)} height={rowH}
-          cornerRadius={logoPosition === 'left' ? [0, cornerR, 0, 0] : [cornerR, cornerR, 0, 0]}
-          {...gradientFill(colors.teamABg, teamAW, rowH, 'h')} />
-        {patternImg && <Rect x={teamAX} y={teamAY} width={Math.max(0, teamAW)} height={rowH} cornerRadius={logoPosition === 'left' ? [0, cornerR, 0, 0] : [cornerR, cornerR, 0, 0]} fillPatternImage={patternImg as any} listening={false} />}
+        {renderTeamPanel(
+          teamAX,
+          teamAY,
+          teamAW,
+          rowH,
+          colors.teamABg,
+          logoPosition === 'left' ? [0, cornerR, 0, 0] : [cornerR, cornerR, 0, 0],
+        )}
         
-        <Rect x={teamAX} y={teamBY} width={Math.max(0, teamAW)} height={rowH}
-          cornerRadius={logoPosition === 'left' ? [0, 0, cornerR, 0] : [0, 0, cornerR, cornerR]}
-          {...gradientFill(colors.teamBBg, teamAW, rowH, 'h')} />
-        {patternImg && <Rect x={teamAX} y={teamBY} width={Math.max(0, teamAW)} height={rowH} cornerRadius={logoPosition === 'left' ? [0, 0, cornerR, 0] : [0, 0, cornerR, cornerR]} fillPatternImage={patternImg as any} listening={false} />}
+        {renderTeamPanel(
+          teamAX,
+          teamBY,
+          teamAW,
+          rowH,
+          colors.teamBBg,
+          logoPosition === 'left' ? [0, 0, cornerR, 0] : [0, 0, cornerR, cornerR],
+        )}
         {(scorePosition === 'before' || scorePosition === 'after') &&
           renderScorePanel(scorePosAX, teamAY, scorePW, rowH, colors.scoreABg)}
         {(scorePosition === 'before' || scorePosition === 'after') &&
@@ -848,10 +1025,8 @@ const ScoreboardRenderer: React.FC<ScoreboardRendererProps> = ({
       <Layer>
         {/* Main scoreboard group — offset by margin so it's centered in canvas area */}
         <Group x={margin.left} y={margin.top} id="scoreboard-root">
-          <Group skewX={styleSkew}>
-            {renderFrame()}
-            {isLR ? renderLRLayout() : renderTBLayout()}
-          </Group>
+          {renderFrame()}
+          {isLR ? renderLRLayout() : renderTBLayout()}
 
           {/* Canvas margin resize handles — preview only, wrapped so sanitizer removes them */}
           <Group id="resize-handles" name="preview-only">

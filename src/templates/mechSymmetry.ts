@@ -32,7 +32,7 @@ export const mechSymmetry: TemplateConfig = {
     shadowStrength: 0.8,
     glowStrength: 0.3,
     highlightStrength: 1.0,
-    frameDepth: 0,
+    frameDepth: 4,
     skewX: 0,
     techBorders: true,
     patternStyle: 'none',

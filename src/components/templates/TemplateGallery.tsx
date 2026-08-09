@@ -74,7 +74,10 @@ const TemplateGallery: React.FC = () => {
           const teamColorB = tpl.colors.teamBBg.color;
           const tags = getTags(tpl);
           if (sportRecommended.has(tpl.id)) tags.unshift({ label: 'MATCH', color: '#86efac', bg: 'rgba(34,197,94,0.15)' });
-          const skew = tpl.style.skewX !== 0 ? `skewX(${tpl.style.skewX * 30}deg)` : 'none';
+          // Keep gallery thumbnails aligned with the renderer: skew is a tiny
+          // accent now, never a full-card tilt that makes the preview look broken.
+          const previewSkew = Math.max(-2.5, Math.min(2.5, tpl.style.skewX * 4));
+          const skew = tpl.style.skewX !== 0 ? `skewX(${previewSkew}deg)` : 'none';
 
           return (
             <button

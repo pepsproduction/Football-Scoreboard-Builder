@@ -4,6 +4,7 @@ import { Layers, Square, RotateCcw } from 'lucide-react';
 import { useEditorStore, defaultStyle } from '../../store/editorStore';
 import { SliderRow } from './LayoutControls';
 import type { StyleParams } from '../../types/editor';
+import { MAX_SAFE_SKEW } from '../../lib/visualSafety';
 
 const StyleControls: React.FC = () => {
   const styleMode = useEditorStore((s) => s.styleMode);
@@ -12,6 +13,7 @@ const StyleControls: React.FC = () => {
   const setStyleParam = useEditorStore((s) => s.setStyleParam);
 
   const is3D = styleMode === '3d';
+  const skewLimit = Math.round(MAX_SAFE_SKEW * 100);
 
   const sliders: { key: Exclude<keyof StyleParams, 'techBorders' | 'patternStyle' | 'moduleShape'>; label: string; min: number; max: number; unit?: string; only3D?: boolean }[] = [
     { key: 'borderThickness', label: 'ความหนาขอบ', min: 1, max: 20, unit: 'px' },
@@ -21,7 +23,7 @@ const StyleControls: React.FC = () => {
     { key: 'glowStrength', label: 'ความเข้ม Glow', min: 0, max: 1, unit: '', only3D: true },
     { key: 'highlightStrength', label: 'ความเข้ม Highlight', min: 0, max: 1, unit: '', only3D: false },
     { key: 'frameDepth', label: 'ความลึกกรอบ', min: 0, max: 20, unit: 'px', only3D: true },
-    { key: 'skewX', label: 'ความเอียง (Skew)', min: -50, max: 50, unit: '%' },
+    { key: 'skewX', label: 'ความเอียง (Skew)', min: -skewLimit, max: skewLimit, unit: '%' },
   ];
 
   return (
@@ -63,6 +65,12 @@ const StyleControls: React.FC = () => {
       </div>
 
       {/* Sliders */}
+      <div style={{
+        fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 10,
+        lineHeight: 1.5,
+      }}>
+        Skew is limited to a subtle +/-{skewLimit}% accent so the scoreboard stays level.
+      </div>
       {sliders
         .filter((s) => !s.only3D || is3D)
         .map((s) => (
@@ -72,7 +80,7 @@ const StyleControls: React.FC = () => {
             value={s.unit === ''
               ? Math.round((style[s.key] as number) * 100)
               : s.key === 'skewX'
-              ? Math.round((style[s.key] as number) * 100)
+              ? Math.max(s.min, Math.min(s.max, Math.round((style[s.key] as number) * 100)))
               : (style[s.key] as number)}
             min={s.unit === '' ? 0 : s.min}
             max={s.unit === '' ? 100 : s.max}

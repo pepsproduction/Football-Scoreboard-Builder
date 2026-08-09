@@ -33,7 +33,7 @@ export const neonStrike: TemplateConfig = {
     highlightStrength: 1,
     glowStrength: 1,
     frameDepth: 8,
-    skewX: 0.15,
+    skewX: 0.05,
     techBorders: true,
     patternStyle: 'grid',
     moduleShape: 'pill',

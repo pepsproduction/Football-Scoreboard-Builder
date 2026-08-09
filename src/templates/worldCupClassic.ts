@@ -28,11 +28,11 @@ export const worldCupClassic: TemplateConfig = {
   style: {
     cornerRadius: 12,
     borderThickness: 2,
-    bevelDepth: 0,
+    bevelDepth: 3,
     shadowStrength: 0.6,
     highlightStrength: 0.8,
     glowStrength: 0.1,
-    frameDepth: 0,
+    frameDepth: 2,
     skewX: 0,
     techBorders: false,
     patternStyle: 'none',
