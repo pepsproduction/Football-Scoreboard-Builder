@@ -1,6 +1,7 @@
 /* PepsLiveTool license gate for the Scoreboard editor. */
 (() => {
   'use strict';
+  const set=(a,b,e=false)=>{s.textContent=a;d.textContent=b;d.classList.toggle('ps-error',e)};
   const body=document.body, toolId=String(body?.dataset.pepsliveTool||'').trim().toLowerCase(); if(!toolId)return;
   const config={apiKey:'AIzaSyDXaar2OZtIChUMsUi9o8kufbAY2twqwd4',authDomain:'my-project-1531149704307.firebaseapp.com',databaseURL:'https://my-project-1531149704307-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'my-project-1531149704307',storageBucket:'my-project-1531149704307.firebasestorage.app',messagingSenderId:'793565815753',appId:'1:793565815753:web:49c27bed03b6dedb98fe18'};
   const admins=new Set(['bankkjchannel@gmail.com']),name='Football Scoreboard Builder',fmt=new Intl.DateTimeFormat('th-TH',{dateStyle:'medium',timeStyle:'short'}),date=v=>{const d=new Date(v);return v&&Number.isFinite(d.getTime())?fmt.format(d):''};
